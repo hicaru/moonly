@@ -48,6 +48,14 @@ pub struct MoonlyLitUniform {
     pub gi_pos_range_2: Vec4,
     /// Virtual GI bounce light 2 color (`xyz`).
     pub gi_color_2: Vec4,
+    /// Analytical 3D shadow blocker 0 (`w > 0`: sphere radius, `w < 0`: cylinder `-radius` with top `y`).
+    pub blocker_0: Vec4,
+    /// Analytical 3D shadow blocker 1.
+    pub blocker_1: Vec4,
+    /// Analytical 3D shadow blocker 2.
+    pub blocker_2: Vec4,
+    /// Analytical 3D shadow blocker 3.
+    pub blocker_3: Vec4,
     /// Exposure (`x`), contrast (`y`), vibrance (`z`), and sunshaft density (`w`).
     pub post_params: Vec4,
     /// Tonemapper index (`x`), optics mode (`y`), shadow filter (`z`), and AO mode (`w`).
@@ -72,6 +80,10 @@ impl Default for MoonlyLitUniform {
             gi_color_1: Vec4::new(0.18, 0.28, 0.36, 1.0),
             gi_pos_range_2: Vec4::new(2.0, 1.0, 0.0, 4.5),
             gi_color_2: Vec4::new(0.28, 0.20, 0.16, 1.0),
+            blocker_0: Vec4::new(0.0, 1.65, 0.0, 0.95),
+            blocker_1: Vec4::new(-2.8, 3.3, 0.0, -0.55),
+            blocker_2: Vec4::new(2.8, 3.3, 0.0, -0.55),
+            blocker_3: Vec4::new(0.0, 0.7, 0.0, -1.35),
             post_params: Vec4::new(1.1, 0.05, 0.08, 0.35),
             mode_flags: UVec4::new(4, 0, 1, 3),
         }
@@ -93,6 +105,16 @@ impl MoonlyLitMaterial {
         let mut mat = Self::default();
         mat.uniform.albedo_roughness = albedo.extend(roughness.clamp(0.04, 1.0));
         mat
+    }
+
+    /// Override the 4 analytical 3D shadow blockers (`w > 0`: sphere, `w < 0`: vertical pillar).
+    #[must_use]
+    pub const fn with_blockers(mut self, blockers: [Vec4; 4]) -> Self {
+        self.uniform.blocker_0 = blockers[0];
+        self.uniform.blocker_1 = blockers[1];
+        self.uniform.blocker_2 = blockers[2];
+        self.uniform.blocker_3 = blockers[3];
+        self
     }
 }
 
