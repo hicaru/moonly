@@ -71,13 +71,22 @@ fn main() {
         .run();
 }
 
+const LAB_BLOCKERS: [Vec4; 4] = [
+    Vec4::new(-1.6, 0.75, 0.2, 0.75),
+    Vec4::new(0.0, 0.75, 0.2, 0.75),
+    Vec4::new(1.6, 0.75, 0.2, 0.75),
+    Vec4::ZERO,
+];
+
 fn setup_gi_lab_scene(
     mut commands: Commands,
     capture: Res<LabCaptureOptions>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MoonlyLitMaterial>>,
+    mut config: ResMut<MoonlyConfig>,
     mut post_cfg: ResMut<Hdr10PostConfig>,
 ) {
+    config.rain_wetness = 0.65;
     post_cfg.operator = TonemapOperator::AgX;
     post_cfg.exposure = 1.25;
 
@@ -101,10 +110,10 @@ fn spawn_cornell_bunker(
     materials: &mut Assets<MoonlyLitMaterial>,
 ) {
     let floor_mesh = meshes.add(Cuboid::new(14.0, 0.3, 14.0));
-    let floor_mat = materials.add(MoonlyLitMaterial::from_albedo_roughness(
-        Vec3::new(0.46, 0.45, 0.43),
-        0.16,
-    ));
+    let floor_mat = materials.add(
+        MoonlyLitMaterial::from_albedo_roughness(Vec3::new(0.46, 0.45, 0.43), 0.16)
+            .with_blockers(LAB_BLOCKERS),
+    );
     commands.spawn((
         Mesh3d(floor_mesh),
         MeshMaterial3d(floor_mat),
@@ -117,14 +126,14 @@ fn spawn_cornell_bunker(
     ));
 
     let wall_mesh = meshes.add(Cuboid::new(0.4, 4.0, 6.0));
-    let warm_wall = materials.add(MoonlyLitMaterial::from_albedo_roughness(
-        Vec3::new(0.86, 0.36, 0.18),
-        0.55,
-    ));
-    let cool_wall = materials.add(MoonlyLitMaterial::from_albedo_roughness(
-        Vec3::new(0.18, 0.68, 0.78),
-        0.55,
-    ));
+    let warm_wall = materials.add(
+        MoonlyLitMaterial::from_albedo_roughness(Vec3::new(0.86, 0.36, 0.18), 0.55)
+            .with_blockers(LAB_BLOCKERS),
+    );
+    let cool_wall = materials.add(
+        MoonlyLitMaterial::from_albedo_roughness(Vec3::new(0.18, 0.68, 0.78), 0.55)
+            .with_blockers(LAB_BLOCKERS),
+    );
     commands.spawn((
         Mesh3d(wall_mesh.clone()),
         MeshMaterial3d(warm_wall),
@@ -156,10 +165,10 @@ fn spawn_bunker_spheres_and_lights(
     let sphere_mesh = meshes.add(Sphere::new(0.75).mesh().uv(32, 18));
     for (idx, x_pos) in [-1.6_f32, 0.0, 1.6].into_iter().enumerate() {
         let roughness = 0.12 + (idx as f32) * 0.32;
-        let mat = materials.add(MoonlyLitMaterial::from_albedo_roughness(
-            Vec3::new(0.82, 0.80, 0.76),
-            roughness,
-        ));
+        let mat = materials.add(
+            MoonlyLitMaterial::from_albedo_roughness(Vec3::new(0.82, 0.80, 0.76), roughness)
+                .with_blockers(LAB_BLOCKERS),
+        );
         commands.spawn((
             Mesh3d(sphere_mesh.clone()),
             MeshMaterial3d(mat),
@@ -192,12 +201,10 @@ fn spawn_bunker_spheres_and_lights(
 fn tick_gi_lab_capture(
     mut commands: Commands,
     capture: Res<LabCaptureOptions>,
-    mut config: ResMut<MoonlyConfig>,
     mut exit: MessageWriter<AppExit>,
     mut frame: Local<u32>,
 ) {
     *frame += 1;
-    config.rain_wetness = 0.65;
     if capture.screenshot_frame == Some(*frame) {
         commands
             .spawn(Screenshot::primary_window())
