@@ -67,7 +67,7 @@ fn main() {
             }),
             ..WindowPlugin::default()
         }))
-        .add_plugins(MoonlyPlugin::new(config))
+        .add_plugins(MoonlyPlugin { config })
         .insert_resource(ClearColor(Color::srgb(0.14, 0.18, 0.25)))
         .insert_resource(capture)
         .add_systems(Startup, setup_gi_lab_scene)
