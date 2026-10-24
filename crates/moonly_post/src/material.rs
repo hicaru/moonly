@@ -9,7 +9,7 @@ use moonly_core::{
     AmbientOcclusionMode, LightPackage, MoonlyConfig, ShadowFilterMode, WeatherEnvironment,
 };
 use moonly_gi::GiLightField;
-use moonly_volumetrics::SunShaftsConfig;
+use moonly_volumetrics::{SunShaftsConfig, SunShaftsMode};
 
 use crate::{Hdr10PostConfig, OpticsMode};
 
@@ -58,6 +58,8 @@ pub struct MoonlyLitUniform {
     pub blocker_3: Vec4,
     /// Exposure (`x`), contrast (`y`), vibrance (`z`), and sunshaft density (`w`).
     pub post_params: Vec4,
+    /// Shaft density (`x`), anisotropy (`y`), screen decay (`z`), and ray steps (`w`).
+    pub shaft_params: Vec4,
     /// Tonemapper index (`x`), optics mode (`y`), shadow filter (`z`), and AO mode (`w`).
     pub mode_flags: UVec4,
 }
@@ -71,20 +73,21 @@ impl Default for MoonlyLitUniform {
             sun_color_wetness: Vec4::new(1.35, 1.18, 0.95, 0.0),
             hemi_color: Vec4::new(0.42, 0.50, 0.64, 0.85),
             ambient_fog_density: Vec4::new(0.06, 0.07, 0.09, 0.012),
-            spot_pos_range: Vec4::new(0.0, 4.5, 0.0, 16.0),
-            spot_dir_cos: Vec4::new(0.0, -1.0, 0.0, 0.65),
-            spot_color_vol: Vec4::new(2.2, 1.6, 0.9, 0.4),
-            gi_pos_range_0: Vec4::new(0.0, 0.2, 0.0, 5.0),
-            gi_color_0: Vec4::new(0.35, 0.22, 0.12, 1.0),
-            gi_pos_range_1: Vec4::new(-2.0, 1.0, 0.0, 4.5),
-            gi_color_1: Vec4::new(0.18, 0.28, 0.36, 1.0),
-            gi_pos_range_2: Vec4::new(2.0, 1.0, 0.0, 4.5),
-            gi_color_2: Vec4::new(0.28, 0.20, 0.16, 1.0),
+            spot_pos_range: Vec4::ZERO,
+            spot_dir_cos: Vec4::ZERO,
+            spot_color_vol: Vec4::ZERO,
+            gi_pos_range_0: Vec4::ZERO,
+            gi_color_0: Vec4::ZERO,
+            gi_pos_range_1: Vec4::ZERO,
+            gi_color_1: Vec4::ZERO,
+            gi_pos_range_2: Vec4::ZERO,
+            gi_color_2: Vec4::ZERO,
             blocker_0: Vec4::new(0.0, 1.15, 0.0, 0.85),
             blocker_1: Vec4::new(-2.2, 3.6, 0.0, -0.75),
             blocker_2: Vec4::new(2.2, 3.6, 0.0, -0.75),
             blocker_3: Vec4::new(0.0, 0.5, 0.0, -1.10),
             post_params: Vec4::new(1.1, 0.05, 0.08, 0.35),
+            shaft_params: Vec4::new(0.35, 0.68, 0.96, 24.0),
             mode_flags: UVec4::new(4, 0, 1, 3),
         }
     }
@@ -155,6 +158,16 @@ pub type PostLightingRes<'w> = (
     Res<'w, OpticsMode>,
 );
 
+pub(crate) struct LightingUniformParams<'a> {
+    pub config: &'a MoonlyConfig,
+    pub env: &'a WeatherEnvironment,
+    pub package: &'a LightPackage,
+    pub gi_field: &'a GiLightField,
+    pub shafts: &'a SunShaftsConfig,
+    pub hdr10: &'a Hdr10PostConfig,
+    pub optics: &'a OpticsMode,
+}
+
 /// Synchronize global XRay-Monolith lighting, GI, and HDR10 resources into all `MoonlyLitMaterial` assets.
 pub fn sync_moonly_lit_materials(
     core_res: CoreLightingRes,
@@ -163,49 +176,72 @@ pub fn sync_moonly_lit_materials(
 ) {
     let (config, env, package, gi_field) = core_res;
     let (shafts, hdr10, optics) = post_res;
-
-    let softness = match config.shadow_filter {
-        ShadowFilterMode::HardwarePcf => 0.35,
-        ShadowFilterMode::MonolithJitter64 | ShadowFilterMode::MonolithMinMax => 1.0,
-        ShadowFilterMode::EnhancedPcss => 1.45,
+    let params = LightingUniformParams {
+        config: &config,
+        env: &env,
+        package: &package,
+        gi_field: &gi_field,
+        shafts: &shafts,
+        hdr10: &hdr10,
+        optics: &optics,
     };
-    let ao_idx = match config.ao_mode {
+    for (_, material) in materials.iter_mut() {
+        let mut next = material.uniform;
+        apply_lighting_uniform(&mut next, &params);
+        if next != material.uniform {
+            material.uniform = next;
+        }
+    }
+}
+
+pub(crate) fn apply_lighting_uniform(u: &mut MoonlyLitUniform, params: &LightingUniformParams<'_>) {
+    let (softness, shadow_idx) = match params.config.shadow_filter {
+        ShadowFilterMode::HardwarePcf => (0.35, 0),
+        ShadowFilterMode::MonolithJitter64 => (1.0, 1),
+        ShadowFilterMode::MonolithMinMax => (1.0, 2),
+        ShadowFilterMode::EnhancedPcss => (1.45, 3),
+    };
+    let ao_idx = match params.config.ao_mode {
         AmbientOcclusionMode::Off => 0,
         AmbientOcclusionMode::Ssao => 1,
         AmbientOcclusionMode::Hdao => 2,
         AmbientOcclusionMode::ActivisionColoredAo | AmbientOcclusionMode::EnhancedSsdo => 3,
     };
-    let flags = UVec4::new(
-        hdr10.operator.shader_index(),
-        optics.shader_index(),
-        1,
+    let shaft_density = if matches!(params.shafts.mode, SunShaftsMode::Off) {
+        0.0
+    } else {
+        params.shafts.density
+    };
+    let (sun_direction, sun_color) = params
+        .package
+        .v_direct
+        .first()
+        .map_or((params.env.sun_direction, params.env.sun_color), |light| {
+            (light.direction, light.color)
+        });
+    u.sun_dir_shadow_softness = sun_direction.extend(softness);
+    u.sun_color_wetness = sun_color.extend(params.config.rain_wetness);
+    u.hemi_color = params.env.hemi_color;
+    u.ambient_fog_density = params.env.ambient_color.extend(0.012);
+    u.post_params = Vec4::new(
+        params.hdr10.exposure,
+        params.hdr10.contrast,
+        params.hdr10.vibrance,
+        shaft_density,
+    );
+    u.shaft_params = Vec4::new(
+        shaft_density,
+        params.shafts.mie_anisotropy,
+        params.shafts.screen_space_decay,
+        params.shafts.raymarch_steps as f32,
+    );
+    u.mode_flags = UVec4::new(
+        params.hdr10.operator.shader_index(),
+        params.optics.shader_index(),
+        shadow_idx,
         ao_idx,
     );
-
-    let ids: Vec<AssetId<MoonlyLitMaterial>> = materials.ids().collect();
-    for id in ids {
-        let Some(existing) = materials.get(id) else {
-            continue;
-        };
-        let mut next = existing.uniform;
-        next.sun_dir_shadow_softness = env.sun_direction.extend(softness);
-        next.sun_color_wetness = env.sun_color.extend(config.rain_wetness);
-        next.hemi_color = env.hemi_color;
-        next.ambient_fog_density = env.ambient_color.extend(0.012);
-        next.post_params = Vec4::new(
-            hdr10.exposure,
-            hdr10.contrast,
-            hdr10.vibrance,
-            shafts.density,
-        );
-        next.mode_flags = flags;
-        apply_spot_and_gi_uniforms(&mut next, &package, &gi_field);
-        if next != existing.uniform
-            && let Some(mut mat) = materials.get_mut(id)
-        {
-            mat.uniform = next;
-        }
-    }
+    apply_spot_and_gi_uniforms(u, params.package, params.gi_field);
 }
 
 fn apply_spot_and_gi_uniforms(
@@ -213,6 +249,9 @@ fn apply_spot_and_gi_uniforms(
     package: &LightPackage,
     gi_field: &GiLightField,
 ) {
+    u.spot_pos_range = Vec4::ZERO;
+    u.spot_dir_cos = Vec4::ZERO;
+    u.spot_color_vol = Vec4::ZERO;
     if let Some(spot) = package
         .v_shadowed
         .first()
@@ -222,16 +261,17 @@ fn apply_spot_and_gi_uniforms(
         u.spot_dir_cos = spot.direction.extend((spot.cone_angle * 0.5).cos());
         u.spot_color_vol = spot.color.extend(spot.volumetric.intensity);
     }
-    if let Some(g0) = gi_field.virtual_lights.first() {
-        u.gi_pos_range_0 = g0.position.extend(g0.range);
-        u.gi_color_0 = (g0.color * 12.0).extend(1.0);
-    }
-    if let Some(g1) = gi_field.virtual_lights.get(1) {
-        u.gi_pos_range_1 = g1.position.extend(g1.range);
-        u.gi_color_1 = (g1.color * 12.0).extend(1.0);
-    }
-    if let Some(g2) = gi_field.virtual_lights.get(2) {
-        u.gi_pos_range_2 = g2.position.extend(g2.range);
-        u.gi_color_2 = (g2.color * 12.0).extend(1.0);
+    let gi_slots = [
+        (&mut u.gi_pos_range_0, &mut u.gi_color_0),
+        (&mut u.gi_pos_range_1, &mut u.gi_color_1),
+        (&mut u.gi_pos_range_2, &mut u.gi_color_2),
+    ];
+    for (idx, (pos_range, color)) in gi_slots.into_iter().enumerate() {
+        *pos_range = Vec4::ZERO;
+        *color = Vec4::ZERO;
+        if let Some(light) = gi_field.virtual_lights.get(idx) {
+            *pos_range = light.position.extend(light.range);
+            *color = light.color.extend(1.0);
+        }
     }
 }

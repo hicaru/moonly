@@ -40,12 +40,13 @@ pub fn evaluate_night_vision_cpu(linear_rgb: Vec3, uv: Vec2, white_phosphor: boo
     let amplified = (luma * 4.5).powf(0.75).clamp(0.0, 1.5);
     let dist = (uv - Vec2::splat(0.5)).length();
     let tube_mask = (1.0 - ((dist - 0.38) / 0.14).clamp(0.0, 1.0)).powi(2);
+    let scanline = 0.94 + 0.06 * (uv.y * 540.0).sin();
     let phosphor = if white_phosphor {
         Vec3::new(0.68, 0.92, 0.98)
     } else {
         Vec3::new(0.18, 0.96, 0.28)
     };
-    phosphor * (amplified * tube_mask)
+    phosphor * (amplified * tube_mask * scanline)
 }
 
 /// Evaluate smoothstep luminance thermal gradient on CPU (`heatvision.ps`).

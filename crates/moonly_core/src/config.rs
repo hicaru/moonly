@@ -32,11 +32,11 @@ pub const DEFAULT_DLIGHTS_CLIP: f32 = 0.015;
 /// Overall pipeline mode matching `xray-monolith` tiers or Moonly enhancements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 pub enum MoonlyPipelineTier {
-    /// Faithful XRay-Monolith R2 deferred lighting baseline.
+    /// XRay-Monolith R2 CPU lighting and resource baseline.
     ClassicR2,
-    /// Faithful XRay-Monolith R3 DX10.1 pipeline with MinMax SM and MSAA support.
+    /// XRay-Monolith R3 CPU shadow, GI, and post-processing settings.
     MonolithR3,
-    /// Faithful XRay-Monolith R4 DX11 pipeline with 32-photon GI, HDAO, and HDR10.
+    /// XRay-Monolith R4 CPU shadow, GI, and post-processing settings.
     #[default]
     MonolithR4,
     /// Enhanced Moonly mode with BSSF atlas packing, importance-sampled GI, and PCSS.

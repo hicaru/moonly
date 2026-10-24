@@ -3,9 +3,9 @@
 pub use bevy::prelude::*;
 pub use moonly_core::{
     AmbientOcclusionMode, GiRadiosityConfig, HemisphereTracker, LightPackage, MoonlyConfig,
-    MoonlyCorePlugin, MoonlyPipelineTier, ShaderBus, ShadowFilterMode, SunCascadeConfig,
-    VirtualGiLight, VolumetricLightSettings, WeatherEnvironment, XRayLight, XRayLightFlags,
-    XRayLightType,
+    MoonlyCorePlugin, MoonlyLight, MoonlyPipelineTier, ShaderBus, ShadowFilterMode,
+    SunCascadeConfig, VirtualGiLight, VolumetricLightSettings, WeatherEnvironment, XRayLight,
+    XRayLightFlags, XRayLightType,
 };
 pub use moonly_cull::{
     LightVisibilityState, MoonlyCullPlugin, OccRasterizer, OccTestRect, SmapVisPhase,

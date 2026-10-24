@@ -1,54 +1,25 @@
-//! Visual showcase of XRay-Monolith R4 dynamic shadows, 32-photon GI, volumetrics, and HDR10 in Bevy.
+//! Visual showcase of analytic blockers, CPU GI, volumetric approximation, and HDR operators.
 
-use bevy::{
-    app::AppExit,
-    prelude::*,
-    render::view::screenshot::{Screenshot, save_to_disk},
-    window::WindowResolution,
-};
+#[allow(dead_code)]
+mod support;
+
+use bevy::{app::AppExit, prelude::*};
 use moonly::prelude::*;
+use support::{CaptureOptions, CaptureState, capture_system, deterministic_time, window_plugin};
 
-/// CLI capture options for automated visual artifact verification.
-#[derive(Resource, Debug, Clone, Default)]
-struct CaptureOptions {
-    screenshot_frame: Option<u32>,
-    screenshot_path: String,
-    exit_frame: Option<u32>,
-    preset_mode: u32,
-}
+#[derive(Resource, Debug, Clone, Copy, Default)]
+struct ShowcasePreset(u32);
 
-impl CaptureOptions {
+impl ShowcasePreset {
     fn from_env_args() -> Self {
         let args: Vec<String> = std::env::args().collect();
-        let mut opts = Self {
-            screenshot_path: "target/moonly_showcase.png".to_string(),
-            ..Self::default()
-        };
-        let mut i = 1_usize;
-        while let Some(arg) = args.get(i) {
-            if arg == "--screenshot-after" {
-                if let Some(frame_str) = args.get(i + 1) {
-                    opts.screenshot_frame = frame_str.parse::<u32>().ok();
-                }
-                if let Some(path_str) = args.get(i + 2) {
-                    opts.screenshot_path.clone_from(path_str);
-                }
-                i += 3;
-            } else if arg == "--exit-after" {
-                if let Some(frame_str) = args.get(i + 1) {
-                    opts.exit_frame = frame_str.parse::<u32>().ok();
-                }
-                i += 2;
-            } else if arg == "--preset" {
-                if let Some(preset_str) = args.get(i + 1) {
-                    opts.preset_mode = preset_str.parse::<u32>().unwrap_or(0);
-                }
-                i += 2;
-            } else {
-                i += 1;
-            }
-        }
-        opts
+        let index = args.iter().position(|arg| arg == "--preset");
+        Self(
+            index
+                .and_then(|i| args.get(i + 1))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
+        )
     }
 }
 
@@ -56,33 +27,35 @@ impl CaptureOptions {
 #[derive(Component)]
 struct MonolithCrystal;
 
-fn main() {
-    let capture = CaptureOptions::from_env_args();
+fn main() -> AppExit {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Moonly — XRay-Monolith R4 Lighting & GI Showcase".to_string(),
-                resolution: WindowResolution::new(1280, 720),
-                ..Window::default()
-            }),
-            ..WindowPlugin::default()
-        }))
+        .add_plugins(DefaultPlugins.set(window_plugin(
+            "Moonly — XRay-Monolith R4 Lighting & GI Showcase",
+        )))
         .add_plugins(MoonlyPlugin::enhanced())
         .insert_resource(ClearColor(Color::srgb(0.18, 0.24, 0.34)))
-        .insert_resource(capture)
+        .insert_resource(CaptureOptions::from_env_args(
+            "target/visual-audit/showcase.png",
+        ))
+        .insert_resource(ShowcasePreset::from_env_args())
+        .insert_resource(CaptureState::default())
+        .insert_resource(deterministic_time())
         .add_systems(Startup, setup_showcase_scene)
-        .add_systems(Update, (animate_showcase_scene, handle_capture_and_keys))
-        .run();
+        .add_systems(
+            Update,
+            (animate_showcase_scene, handle_optics_keys, capture_system).chain(),
+        )
+        .run()
 }
 
 fn setup_showcase_scene(
     mut commands: Commands,
-    capture: Res<CaptureOptions>,
+    preset: Res<ShowcasePreset>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MoonlyLitMaterial>>,
     mut config: ResMut<MoonlyConfig>,
 ) {
-    if capture.preset_mode == 1 {
+    if preset.0 == 1 {
         config.rain_wetness = 0.85;
     }
 
@@ -206,35 +179,27 @@ fn spawn_lights_and_gi(
 fn animate_showcase_scene(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<MonolithCrystal>>,
+    mut materials: ResMut<Assets<MoonlyLitMaterial>>,
 ) {
-    for mut xf in &mut query {
-        xf.rotate_y(time.delta_secs() * 0.6);
+    let seconds = time.elapsed_secs();
+    let position = Vec3::new((seconds * 0.8).sin(), 1.15 + seconds.cos() * 0.25, 0.0);
+    for mut transform in &mut query {
+        transform.translation = position;
+        transform.rotate_y(time.delta_secs() * 0.6);
+    }
+    for (_, material) in materials.iter_mut() {
+        material.uniform.blocker_0 = position.extend(0.85);
     }
 }
 
-fn handle_capture_and_keys(
-    mut commands: Commands,
-    inputs: (Res<CaptureOptions>, Res<ButtonInput<KeyCode>>),
-    mut optics: ResMut<OpticsMode>,
-    mut exit: MessageWriter<AppExit>,
-    mut frame: Local<u32>,
-) {
-    let (capture, keys) = inputs;
-    *frame += 1;
+fn handle_optics_keys(keys: Res<ButtonInput<KeyCode>>, mut optics: ResMut<OpticsMode>) {
     if keys.just_pressed(KeyCode::KeyN) {
         *optics = match *optics {
             OpticsMode::Standard => OpticsMode::NightVisionGreen,
             OpticsMode::NightVisionGreen => OpticsMode::NightVisionWhite,
             OpticsMode::NightVisionWhite => OpticsMode::ThermalHeatVision,
-            OpticsMode::ThermalHeatVision | OpticsMode::ParallaxScope => OpticsMode::Standard,
+            OpticsMode::ThermalHeatVision => OpticsMode::ParallaxScope,
+            OpticsMode::ParallaxScope => OpticsMode::Standard,
         };
-    }
-    if capture.screenshot_frame == Some(*frame) {
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(capture.screenshot_path.clone()));
-    }
-    if capture.exit_frame == Some(*frame) {
-        exit.write(AppExit::Success);
     }
 }

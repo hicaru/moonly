@@ -1,7 +1,8 @@
 // XRay-Monolith R4 HDR10 tonemapping operators, color spaces, and ST.2084 PQ in WESL (`hdr10.h`).
 
 fn tonemap_reinhard_wp(x: vec3<f32>, wp_sq: f32) -> vec3<f32> {
-    return (x * (vec3<f32>(1.0) + x / wp_sq)) / (x + vec3<f32>(1.0));
+    let mapped = (x * (vec3<f32>(1.0) + x / wp_sq)) / (x + vec3<f32>(1.0));
+    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn tonemap_aces_narkowicz(x: vec3<f32>) -> vec3<f32> {
@@ -27,8 +28,38 @@ fn tonemap_aces_hill(x: vec3<f32>) -> vec3<f32> {
     return clamp(out, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn tonemap_uchimura_scalar(x: f32) -> f32 {
+    let p = 1.0;
+    let a = 1.0;
+    let m = 0.22;
+    let l = 0.4;
+    let c = 1.33;
+    let l0 = ((p - m) * l) / a;
+    let s0 = m + l0;
+    let s1 = m + a * l0;
+    let c2 = (a * p) / (p - s1);
+    let cp = -c2 / p;
+    let w0 = 1.0 - smoothstep(0.0, m, x);
+    let w2 = select(0.0, 1.0, x >= m + l0);
+    let w1 = 1.0 - w0 - w2;
+    let t = m * pow(max(x / m, 0.0), c);
+    let s = p - (p - s1) * exp(cp * (x - s0));
+    let linear = m + a * (x - m);
+    return clamp(t * w0 + linear * w1 + s * w2, 0.0, 1.0);
+}
+
+fn tonemap_uchimura(x: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        tonemap_uchimura_scalar(x.x),
+        tonemap_uchimura_scalar(x.y),
+        tonemap_uchimura_scalar(x.z),
+    );
+}
+
 fn tonemap_stevem(x: vec3<f32>) -> vec3<f32> {
-    return (x * (10.0 * x + vec3<f32>(0.3))) / (x * (10.0 * x + vec3<f32>(0.5)) + vec3<f32>(1.5));
+    let mapped = (x * (10.0 * x + vec3<f32>(0.3)))
+        / (x * (10.0 * x + vec3<f32>(0.5)) + vec3<f32>(1.5));
+    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn uncharted2_partial_wesl(x: vec3<f32>) -> vec3<f32> {
@@ -68,7 +99,7 @@ fn tonemap_agx(x: vec3<f32>) -> vec3<f32> {
         -0.05289685 * sig.x + 1.1519031 * sig.y - 0.09896118 * sig.z,
         -0.05297163 * sig.x - 0.09804345 * sig.y + 1.1510736 * sig.z,
     );
-    return clamp(out, vec3<f32>(0.0), vec3<f32>(1.0));
+    return clamp(pow(max(out, vec3<f32>(0.0)), vec3<f32>(2.2)), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn evaluate_hdr10_tonemap(rgb: vec3<f32>, op_idx: u32) -> vec3<f32> {
@@ -88,13 +119,19 @@ fn evaluate_hdr10_tonemap(rgb: vec3<f32>, op_idx: u32) -> vec3<f32> {
     if op_idx == 4u {
         return tonemap_aces_hill(c);
     }
+    if op_idx == 5u {
+        return tonemap_uchimura(c);
+    }
     if op_idx == 6u {
         return tonemap_stevem(c);
     }
     if op_idx == 7u {
         return tonemap_uncharted2(c);
     }
-    return tonemap_agx(c);
+    if op_idx == 8u {
+        return tonemap_agx(c);
+    }
+    return tonemap_aces_hill(c);
 }
 
 fn encode_st2084_pq(linear_rgb: vec3<f32>, max_nits: f32) -> vec3<f32> {

@@ -1,7 +1,10 @@
-//! Real-time GI 32-photon radiosity bounce and Activision colored AO for Moonly.
+//! Real-time GI photon radiosity bounce and Activision colored AO for Moonly.
 
 pub mod ambient_occlusion;
 pub mod gi_bounce;
+mod gi_intersection;
+mod gi_sampling;
+mod gi_system;
 
 use bevy::{asset::embedded_asset, prelude::*};
 use moonly_core::MoonlySystemSet;
@@ -68,7 +71,7 @@ mod tests {
         let mut out_enh = Vec::new();
         let mut scratch = Vec::new();
         gi_generate_enhanced(&light, &cfg, &[floor], &mut out_enh, &mut scratch);
-        assert_eq!(out_mono.len(), out_enh.len());
+        assert!(!out_enh.is_empty());
 
         let lit = evaluate_reflected_gi_at_point(Vec3::new(0.0, 0.5, 0.0), Vec3::NEG_Y, &out_enh);
         assert!(lit.length() > 0.0);

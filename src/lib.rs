@@ -57,7 +57,13 @@ mod tests {
     fn full_moonly_plugin_ticks_all_subsystems_in_headless_app() {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, MoonlyPlugin::enhanced()));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Transform::from_xyz(0.0, 2.0, 8.0),
+            GlobalTransform::from(Transform::from_xyz(0.0, 2.0, 8.0)),
+        ));
 
+        let light_transform = Transform::from_xyz(0.0, 4.0, 0.0).looking_at(Vec3::ZERO, Vec3::Z);
         app.world_mut().spawn((
             XRayLight::spot(
                 Vec3::new(0.0, 4.0, 0.0),
@@ -66,8 +72,8 @@ mod tests {
                 16.0,
                 1.2,
             ),
-            Transform::from_xyz(0.0, 4.0, 0.0),
-            GlobalTransform::default(),
+            light_transform,
+            GlobalTransform::from(light_transform),
         ));
         app.world_mut().spawn(GiReflectorBox::from_center_extents(
             Vec3::new(0.0, -0.5, 0.0),
@@ -86,6 +92,71 @@ mod tests {
 
         let alloc = app.world().resource::<SmapAllocator>();
         assert_eq!(alloc.allocated.len(), 1);
+    }
+
+    #[test]
+    fn material_sync_creates_no_phantom_lights_and_clears_removed_lights() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, MoonlyPlugin::enhanced()));
+        app.init_resource::<Assets<MoonlyLitMaterial>>();
+        app.add_systems(
+            PostUpdate,
+            moonly_post::sync_moonly_lit_materials
+                .in_set(moonly_core::MoonlySystemSet::SyncMaterials),
+        );
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<MoonlyLitMaterial>>()
+            .add(MoonlyLitMaterial::default());
+        app.update();
+        let material = app
+            .world()
+            .resource::<Assets<MoonlyLitMaterial>>()
+            .get(&handle);
+        assert!(material.is_some_and(|mat| mat.uniform.spot_color_vol == Vec4::ZERO));
+        assert!(material.is_some_and(|mat| mat.uniform.gi_color_0 == Vec4::ZERO));
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                XRayLight::spot(Vec3::Y, Vec3::NEG_Y, Vec3::ONE, 8.0, 1.0),
+                Transform::from_translation(Vec3::Y),
+                GlobalTransform::default(),
+            ))
+            .id();
+        app.update();
+        let lit = app
+            .world()
+            .resource::<Assets<MoonlyLitMaterial>>()
+            .get(&handle);
+        assert!(lit.is_some_and(|mat| mat.uniform.spot_color_vol.truncate() == Vec3::ONE));
+
+        app.world_mut().despawn(entity);
+        app.update();
+        let cleared = app
+            .world()
+            .resource::<Assets<MoonlyLitMaterial>>()
+            .get(&handle);
+        assert!(cleared.is_some_and(|mat| mat.uniform.spot_color_vol == Vec4::ZERO));
+
+        app.world_mut().spawn((
+            XRayLight {
+                light_type: XRayLightType::Direct,
+                color: Vec3::new(2.0, 3.0, 4.0),
+                ..XRayLight::default()
+            },
+            Transform::default(),
+            GlobalTransform::default(),
+        ));
+        app.update();
+        let direct = app
+            .world()
+            .resource::<Assets<MoonlyLitMaterial>>()
+            .get(&handle);
+        assert!(direct.is_some_and(|mat| {
+            mat.uniform.sun_dir_shadow_softness.truncate() == Vec3::NEG_Z
+                && mat.uniform.sun_color_wetness.truncate() == Vec3::new(2.0, 3.0, 4.0)
+        }));
     }
 
     #[test]

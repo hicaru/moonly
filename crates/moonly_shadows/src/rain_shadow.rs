@@ -59,7 +59,7 @@ impl RainShadowState {
     ) -> Self {
         let h = DEFAULT_RAIN_MAX_DISTANCE_METERS;
         let a = (0.5 * fov_y_rad).tan();
-        let c = a * aspect;
+        let c = (0.5 * fov_y_rad * aspect).tan();
         let radius = (h * h * (1.0 + a * a + c * c)) / (2.0 * h);
         let center = camera_pos + camera_dir.normalize_or_zero() * (h - radius);
 
@@ -85,5 +85,22 @@ impl RainShadowState {
             proj,
             combine,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rain_bounding_radius_matches_original_aspect_formula() {
+        let fov = 1.1;
+        let aspect = 2.0;
+        let state = RainShadowState::compute(Vec3::ZERO, Vec3::NEG_Z, Vec3::NEG_Y, fov, aspect);
+        let a = (0.5 * fov).tan();
+        let c = (0.5 * fov * aspect).tan();
+        let h = DEFAULT_RAIN_MAX_DISTANCE_METERS;
+        let expected = h * (1.0 + a * a + c * c) * 0.5;
+        assert!((state.sphere_radius - expected).abs() < 1.0e-4);
     }
 }

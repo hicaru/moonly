@@ -79,16 +79,17 @@ pub fn evaluate_volumetric_sunshaft(
         return Vec3::ZERO;
     }
     let ray_vec = world_pos - camera_pos;
-    let ray_len = ray_vec.length().min(80.0);
-    if ray_len <= 1.0e-4 {
+    let ray_len = ray_vec.length();
+    if !ray_len.is_finite() || ray_len <= 1.0e-4 {
         return Vec3::ZERO;
     }
     let view_dir = ray_vec / ray_len;
+    let march_len = ray_len.min(80.0);
     let cos_theta = view_dir.dot(-sun_dir.normalize_or_zero());
     let phase = henyey_greenstein_phase(cos_theta, cfg.mie_anisotropy);
 
     let steps = cfg.raymarch_steps.clamp(4, 64);
-    let step_len = ray_len / (steps as f32);
+    let step_len = march_len / (steps as f32);
     let mut accum = 0.0_f32;
     for i in 0..steps {
         let t = (i as f32 + 0.5) * step_len;

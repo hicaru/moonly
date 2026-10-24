@@ -53,7 +53,17 @@ impl SpotShadowXform {
         prev_size: u32,
     ) -> Self {
         let l_dir = light.direction.normalize_or_zero();
-        let l_right = light.right.normalize_or_zero();
+        let up_ref = if l_dir.y.abs() > 0.99 {
+            Vec3::Z
+        } else {
+            Vec3::Y
+        };
+        let fallback_right = up_ref.cross(l_dir).normalize_or_zero();
+        let l_right = if light.right.length_squared() > f32::EPSILON {
+            light.right.normalize_or_zero()
+        } else {
+            fallback_right
+        };
         let l_up = l_dir.cross(l_right).normalize_or_zero();
         let view = look_to_rh_mat4(light.position, l_dir, l_up);
 
@@ -152,4 +162,23 @@ fn compute_adaptive_smap_size(color: Vec3, ssa: f32, max_pool_size: u32, prev_si
         }
     }
     rounded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_right_vector_uses_original_fallback_basis() {
+        let light = XRayLight {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            direction: Vec3::NEG_Y,
+            right: Vec3::ZERO,
+            ..XRayLight::default()
+        };
+        let xf = SpotShadowXform::compute_xf_spot(&light, Vec3::ZERO, 2048, 0);
+        let expected = look_to_rh_mat4(light.position, Vec3::NEG_Y, Vec3::Z);
+        assert!(xf.view.abs_diff_eq(expected, 1.0e-6));
+        assert!(xf.view.determinant().abs() > 0.0);
+    }
 }

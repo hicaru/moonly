@@ -1,78 +1,55 @@
 //! Interactive and automated GI radiosity, wet rain shadow, and optics laboratory example.
 
-use bevy::{
-    app::AppExit,
-    prelude::*,
-    render::view::screenshot::{Screenshot, save_to_disk},
-    window::WindowResolution,
-};
-use moonly::prelude::*;
+#[allow(dead_code)]
+mod support;
 
-/// CLI options for automated screenshot capture and optic/tonemap preset selection.
-#[derive(Resource, Debug, Clone, Default)]
-struct LabCaptureOptions {
-    screenshot_frame: Option<u32>,
-    screenshot_path: String,
-    exit_frame: Option<u32>,
+use bevy::{app::AppExit, prelude::*};
+use moonly::prelude::*;
+use support::{
+    CaptureOptions, CaptureState, capture_system, deterministic_time,
+    scene::{ExampleLight, ExampleOrb, MotionEnabled, animate_scene, spawn_camera},
+    window_plugin,
+};
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+struct LabOptions {
     optics_index: u32,
 }
 
-impl LabCaptureOptions {
+impl LabOptions {
     fn from_env_args() -> Self {
         let args: Vec<String> = std::env::args().collect();
-        let mut opts = Self {
-            screenshot_path: "target/moonly_gi_lab.png".to_string(),
-            ..Self::default()
-        };
-        let mut i = 1_usize;
-        while let Some(arg) = args.get(i) {
-            if arg == "--screenshot-after" {
-                if let Some(f) = args.get(i + 1) {
-                    opts.screenshot_frame = f.parse::<u32>().ok();
-                }
-                if let Some(p) = args.get(i + 2) {
-                    opts.screenshot_path.clone_from(p);
-                }
-                i += 3;
-            } else if arg == "--exit-after" {
-                if let Some(f) = args.get(i + 1) {
-                    opts.exit_frame = f.parse::<u32>().ok();
-                }
-                i += 2;
-            } else if arg == "--optics" {
-                if let Some(o) = args.get(i + 1) {
-                    opts.optics_index = o.parse::<u32>().unwrap_or(0);
-                }
-                i += 2;
-            } else {
-                i += 1;
-            }
+        let index = args.iter().position(|arg| arg == "--optics");
+        Self {
+            optics_index: index
+                .and_then(|i| args.get(i + 1))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
         }
-        opts
     }
 }
 
-fn main() {
-    let capture = LabCaptureOptions::from_env_args();
+fn main() -> AppExit {
     let config = MoonlyConfig {
         rain_wetness: 0.65,
         ..MoonlyConfig::default()
     };
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Moonly — GI Radiosity, Rain Wetness & Optics Lab".to_string(),
-                resolution: WindowResolution::new(1280, 720),
-                ..Window::default()
-            }),
-            ..WindowPlugin::default()
-        }))
+        .add_plugins(DefaultPlugins.set(window_plugin(
+            "Moonly — GI Radiosity, Rain Wetness & Optics Lab",
+        )))
         .add_plugins(MoonlyPlugin { config })
         .insert_resource(ClearColor(Color::srgb(0.14, 0.18, 0.25)))
-        .insert_resource(capture)
+        .insert_resource(CaptureOptions::from_env_args(
+            "target/visual-audit/gi-lab.png",
+        ))
+        .insert_resource(LabOptions::from_env_args())
+        .insert_resource(CaptureState::default())
+        .insert_resource(MotionEnabled::from_env_args())
+        .insert_resource(deterministic_time())
         .add_systems(Startup, setup_gi_lab_scene)
-        .add_systems(Update, tick_gi_lab_capture)
-        .run();
+        .add_systems(Update, (animate_scene, capture_system).chain())
+        .run()
 }
 
 const LAB_BLOCKERS: [Vec4; 4] = [
@@ -84,7 +61,7 @@ const LAB_BLOCKERS: [Vec4; 4] = [
 
 fn setup_gi_lab_scene(
     mut commands: Commands,
-    capture: Res<LabCaptureOptions>,
+    options: Res<LabOptions>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MoonlyLitMaterial>>,
     mut post_cfg: ResMut<Hdr10PostConfig>,
@@ -92,17 +69,14 @@ fn setup_gi_lab_scene(
     post_cfg.operator = TonemapOperator::AgX;
     post_cfg.exposure = 1.25;
 
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 2.4, 6.8).looking_at(Vec3::new(0.0, 1.2, 0.0), Vec3::Y),
-    ));
+    spawn_camera(&mut commands);
 
     spawn_cornell_bunker(&mut commands, &mut meshes, &mut materials);
     spawn_bunker_spheres_and_lights(
         &mut commands,
         &mut meshes,
         &mut materials,
-        capture.optics_index,
+        options.optics_index,
     );
 }
 
@@ -176,6 +150,7 @@ fn spawn_bunker_spheres_and_lights(
             MeshMaterial3d(mat),
             Transform::from_xyz(x_pos, 0.75, 0.2),
             HemisphereTracker::default(),
+            ExampleOrb(idx as u32),
         ));
     }
 
@@ -189,30 +164,37 @@ fn spawn_bunker_spheres_and_lights(
         ),
         Transform::from_xyz(-1.2, 4.2, 1.5),
         GlobalTransform::default(),
+        ExampleLight,
+    ));
+    commands.spawn((
+        XRayLight {
+            flags: XRayLightFlags::GI_ENABLED,
+            color: Vec3::new(0.5, 0.8, 1.4),
+            position: Vec3::new(1.8, 2.4, 1.0),
+            range: 10.0,
+            ..XRayLight::default()
+        },
+        Transform::from_xyz(1.8, 2.4, 1.0),
+        GlobalTransform::default(),
+    ));
+    commands.spawn((
+        XRayLight {
+            light_type: XRayLightType::Direct,
+            flags: XRayLightFlags::GI_ENABLED,
+            color: Vec3::new(0.18, 0.16, 0.13),
+            direction: Vec3::new(-0.4, -0.8, -0.3).normalize(),
+            range: 60.0,
+            ..XRayLight::default()
+        },
+        Transform::default().looking_at(Vec3::new(-0.4, -0.8, -0.3), Vec3::Y),
     ));
 
     let mode = match optics_index {
         1 => OpticsMode::NightVisionGreen,
         2 => OpticsMode::NightVisionWhite,
         3 => OpticsMode::ThermalHeatVision,
+        4 => OpticsMode::ParallaxScope,
         _ => OpticsMode::Standard,
     };
     commands.insert_resource(mode);
-}
-
-fn tick_gi_lab_capture(
-    mut commands: Commands,
-    capture: Res<LabCaptureOptions>,
-    mut exit: MessageWriter<AppExit>,
-    mut frame: Local<u32>,
-) {
-    *frame += 1;
-    if capture.screenshot_frame == Some(*frame) {
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(capture.screenshot_path.clone()));
-    }
-    if capture.exit_frame == Some(*frame) {
-        exit.write(AppExit::Success);
-    }
 }

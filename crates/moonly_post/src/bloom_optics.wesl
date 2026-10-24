@@ -10,6 +10,28 @@ fn karis_box4_wesl(c0: vec3<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -
     return avg * karis_weight_wesl(avg);
 }
 
+fn karis_group5_wesl(groups: array<vec3<f32>, 5>) -> vec3<f32> {
+    var weighted = vec3<f32>(0.0);
+    var weight_sum = 0.0;
+    for (var i = 0u; i < 5u; i = i + 1u) {
+        let weight = karis_weight_wesl(groups[i]);
+        weighted = weighted + groups[i] * weight;
+        weight_sum = weight_sum + weight;
+    }
+    return weighted / max(weight_sum, 1.0e-8);
+}
+
+fn karis_downsample_13_wesl(samples: array<vec3<f32>, 13>) -> vec3<f32> {
+    let groups = array<vec3<f32>, 5>(
+        (samples[0] + samples[1] + samples[3] + samples[4]) * 0.25,
+        (samples[1] + samples[2] + samples[4] + samples[5]) * 0.25,
+        (samples[3] + samples[4] + samples[6] + samples[7]) * 0.25,
+        (samples[4] + samples[5] + samples[7] + samples[8]) * 0.25,
+        (samples[9] + samples[10] + samples[11] + samples[12]) * 0.25,
+    );
+    return karis_group5_wesl(groups);
+}
+
 fn eval_lens_flare_wesl(
     uv: vec2<f32>,
     light_uv: vec2<f32>,

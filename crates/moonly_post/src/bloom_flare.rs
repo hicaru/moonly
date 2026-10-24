@@ -15,11 +15,38 @@ pub fn karis_weight(rgb: Vec3) -> f32 {
     1.0 / (1.0 + luma)
 }
 
-/// Evaluate a Karis-weighted 4-tap box average to eliminate sub-pixel specular fireflies.
+/// Average one 4-tap group and apply its Karis firefly suppression weight.
 #[must_use]
 pub fn karis_box4_average(c0: Vec3, c1: Vec3, c2: Vec3, c3: Vec3) -> Vec3 {
     let avg = (c0 + c1 + c2 + c3) * 0.25;
     avg * karis_weight(avg)
+}
+
+/// Combine five box groups with the normalized Karis average from XRay-Monolith.
+#[must_use]
+pub fn karis_group5_average(groups: [Vec3; 5]) -> Vec3 {
+    let mut weighted = Vec3::ZERO;
+    let mut weight_sum = 0.0;
+    for group in groups {
+        let weight = karis_weight(group);
+        weighted += group * weight;
+        weight_sum += weight;
+    }
+    weighted / weight_sum.max(1.0e-8)
+}
+
+/// Evaluate the original 5-group, 13-sample Karis bloom downsample.
+#[must_use]
+pub fn karis_downsample_13(samples: [Vec3; 13]) -> Vec3 {
+    let [a, b, c, d, e, f, g, h, i, j, k, l, m] = samples;
+    let groups = [
+        (a + b + d + e) * 0.25,
+        (b + c + e + f) * 0.25,
+        (d + e + g + h) * 0.25,
+        (e + f + h + i) * 0.25,
+        (j + k + l + m) * 0.25,
+    ];
+    karis_group5_average(groups)
 }
 
 /// Compute normalized 8-tap dual-wave Gaussian weights (`CalcGauss_wave` in `phase_bloom.cpp`).

@@ -40,7 +40,8 @@ license.workspace = true
 publish.workspace = true
 
 [[bench]]
-name = "xray_lighting"
+name = "lighting"
+path = "benches/lighting.rs"
 harness = false
 
 [[example]]

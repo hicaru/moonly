@@ -192,12 +192,13 @@ fn agx_curve(x: Vec3) -> Vec3 {
     let ev = Vec3::new(inset.x.log2(), inset.y.log2(), inset.z.log2());
     let t = ((ev - Vec3::splat(min_ev)) / (max_ev - min_ev)).clamp(Vec3::ZERO, Vec3::ONE);
     let sig = agx_sigmoid_poly(t);
-    Vec3::new(
+    let out = Vec3::new(
         1.196_879 * sig.x - 0.098_020_88 * sig.y - 0.099_029_75 * sig.z,
         -0.052_896_85 * sig.x + 1.151_903_1 * sig.y - 0.098_961_18 * sig.z,
         -0.052_971_63 * sig.x - 0.098_043_45 * sig.y + 1.151_073_6 * sig.z,
     )
-    .clamp(Vec3::ZERO, Vec3::ONE)
+    .max(Vec3::ZERO);
+    Vec3::new(out.x.powf(2.2), out.y.powf(2.2), out.z.powf(2.2)).clamp(Vec3::ZERO, Vec3::ONE)
 }
 
 fn agx_sigmoid_poly(x: Vec3) -> Vec3 {

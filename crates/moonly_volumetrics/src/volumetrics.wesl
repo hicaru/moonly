@@ -18,15 +18,16 @@ fn raymarch_volumetric_sunshafts(
     params: vec4<f32>, // x = density, y = anisotropy_g, z = jitter_offset, w = step_count
 ) -> vec3<f32> {
     let ray_vec = world_pos - camera_pos;
-    let max_dist = min(length(ray_vec), 80.0);
-    if max_dist <= 0.001 {
+    let ray_len = length(ray_vec);
+    if ray_len <= 0.0001 {
         return vec3<f32>(0.0);
     }
-    let view_dir = ray_vec / max_dist;
+    let view_dir = ray_vec / ray_len;
+    let max_dist = min(ray_len, 80.0);
     let cos_theta = dot(view_dir, -normalize(sun_dir));
     let phase = henyey_greenstein_wesl(cos_theta, params.y);
 
-    let steps = u32(clamp(params.w, 4.0, 48.0));
+    let steps = u32(clamp(params.w, 4.0, 64.0));
     let step_len = max_dist / f32(steps);
     var optical_depth = 0.0;
     for (var i: u32 = 0u; i < steps; i = i + 1u) {

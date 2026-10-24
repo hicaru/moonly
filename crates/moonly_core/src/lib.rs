@@ -5,7 +5,7 @@ pub mod hemisphere;
 pub mod lights;
 pub mod shader_bus;
 
-use bevy::{asset::embedded_asset, prelude::*};
+use bevy::{asset::embedded_asset, prelude::*, transform::TransformSystems};
 
 pub use crate::{
     config::{
@@ -19,8 +19,8 @@ pub use crate::{
         HemisphereTracker, WeatherEnvironment, update_hemisphere_trackers,
     },
     lights::{
-        LightPackage, VirtualGiLight, VolumetricLightSettings, XRayLight, XRayLightFlags,
-        XRayLightType, collect_light_packages,
+        LightPackage, MoonlyLight, VirtualGiLight, VolumetricLightSettings, XRayLight,
+        XRayLightFlags, XRayLightType, collect_light_packages,
     },
     shader_bus::{SHADER_BUS_SLOT_COUNT, ShaderBus},
 };
@@ -55,7 +55,8 @@ impl Plugin for MoonlyCorePlugin {
                 MoonlySystemSet::UpdateShadowsAndGi,
                 MoonlySystemSet::SyncMaterials,
             )
-                .chain(),
+                .chain()
+                .after(TransformSystems::Propagate),
         )
         .register_type::<MoonlyConfig>()
         .register_type::<MoonlyPipelineTier>()
@@ -100,6 +101,52 @@ mod tests {
         pkg.push(point);
         assert_eq!(pkg.v_shadowed.len(), 6);
         assert!(pkg.v_point.is_empty());
+    }
+
+    #[test]
+    fn light_package_retains_direct_lights_in_a_dedicated_bucket() {
+        let mut pkg = LightPackage::default();
+        let direct = XRayLight {
+            light_type: XRayLightType::Direct,
+            flags: XRayLightFlags::SHADOW,
+            ..XRayLight::default()
+        };
+        pkg.push(direct);
+        assert_eq!(pkg.v_direct.len(), 1);
+        assert_eq!(pkg.total_count(), 1);
+        assert!(pkg.v_shadowed.is_empty());
+    }
+
+    #[test]
+    fn light_collection_syncs_origin_rotation_and_scale_from_global_transform() {
+        let mut app = App::new();
+        app.init_resource::<LightPackage>();
+        app.add_systems(Update, collect_light_packages);
+        let light = XRayLight {
+            position: Vec3::new(9.0, 8.0, 7.0),
+            ..XRayLight::default()
+        };
+        let entity = app
+            .world_mut()
+            .spawn((light, GlobalTransform::default()))
+            .id();
+        app.update();
+
+        let synced = app.world().get::<XRayLight>(entity);
+        assert_eq!(synced.map(|light| light.position), Some(Vec3::ZERO));
+        assert_eq!(app.world().resource::<LightPackage>().v_shadowed.len(), 6);
+
+        let transform =
+            Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2))
+                .with_scale(Vec3::splat(3.0));
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(GlobalTransform::from(transform));
+        app.update();
+
+        let synced = app.world().get::<XRayLight>(entity);
+        assert!(synced.is_some_and(|light| light.direction.distance(Vec3::NEG_X) < 1.0e-5));
+        assert!(synced.is_some_and(|light| light.right.distance(Vec3::NEG_Z) < 1.0e-5));
     }
 
     #[test]

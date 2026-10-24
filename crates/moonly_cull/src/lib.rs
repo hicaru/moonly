@@ -102,4 +102,109 @@ mod tests {
         assert!(!vis.vis_prepare(&light, Vec3::new(0.0, 0.0, 2.0), 5));
         assert!(vis.visible);
     }
+
+    #[test]
+    fn occlusion_queries_use_strict_depth_equality() {
+        let mut occ = OccRasterizer::default();
+        occ.rasterize_triangle(
+            Vec3::new(0.0, 0.0, 0.5),
+            Vec3::new(64.0, 0.0, 0.5),
+            Vec3::new(0.0, 64.0, 0.5),
+        );
+        occ.rasterize_triangle(
+            Vec3::new(64.0, 0.0, 0.5),
+            Vec3::new(64.0, 64.0, 0.5),
+            Vec3::new(0.0, 64.0, 0.5),
+        );
+        occ.propagate();
+        let query = OccTestRect {
+            x0: 20,
+            y0: 20,
+            x1: 30,
+            y1: 30,
+            depth: 0.5,
+        };
+        assert_eq!(occ.test_monolith(query), -1);
+        assert_eq!(occ.test_enhanced_fast(query), -1);
+    }
+
+    #[test]
+    fn hierarchical_queries_match_full_resolution_reference() {
+        let mut occ = OccRasterizer::default();
+        occ.rasterize_triangle(
+            Vec3::new(3.0, 5.0, 0.2),
+            Vec3::new(55.0, 9.0, 0.5),
+            Vec3::new(13.0, 58.0, 0.8),
+        );
+        occ.rasterize_triangle(
+            Vec3::new(55.0, 9.0, 0.5),
+            Vec3::new(60.0, 50.0, 0.3),
+            Vec3::new(13.0, 58.0, 0.8),
+        );
+        occ.propagate();
+        for index in 0..80_usize {
+            let x0 = (index * 17) % 64;
+            let y0 = (index * 29) % 64;
+            let query = OccTestRect {
+                x0,
+                y0,
+                x1: (x0 + index % 13).min(63),
+                y1: (y0 + index % 7).min(63),
+                depth: index as f32 / 79.0,
+            };
+            let expected = reference_query(&occ, query);
+            assert_eq!(occ.test_monolith(query), expected, "Monolith query {index}");
+            assert_eq!(
+                occ.test_enhanced_fast(query),
+                expected,
+                "fast query {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn reversed_triangle_winding_preserves_coverage_and_depth() {
+        let vertices = [
+            Vec3::new(8.0, 8.0, 0.25),
+            Vec3::new(40.0, 12.0, 0.5),
+            Vec3::new(16.0, 45.0, 0.75),
+        ];
+        let [v0, v1, v2] = vertices;
+        let mut first = OccRasterizer::default();
+        let mut second = OccRasterizer::default();
+        first.rasterize_triangle(v0, v1, v2);
+        second.rasterize_triangle(v2, v1, v0);
+        let (coverage, max_delta) = first.buf_depth_0.iter().zip(&second.buf_depth_0).fold(
+            (0, 0_i32),
+            |(coverage, max_delta), (a, b)| {
+                let delta = a.abs_diff(*b).min(i32::MAX as u32) as i32;
+                (
+                    coverage + usize::from((a == &OCC_DEPTH_FAR) != (b == &OCC_DEPTH_FAR)),
+                    max_delta.max(delta),
+                )
+            },
+        );
+        assert_eq!(coverage, 0);
+        assert!(max_delta <= 256, "fixed-point depth delta {max_delta}");
+    }
+
+    fn reference_query(occ: &OccRasterizer, rect: OccTestRect) -> i32 {
+        let depth = df_2_s32(rect.depth);
+        let x0 = rect.x0.min(OCC_DIM_0 - 1);
+        let y0 = rect.y0.min(OCC_DIM_0 - 1);
+        let x1 = rect.x1.min(OCC_DIM_0 - 1).max(x0);
+        let y1 = rect.y1.min(OCC_DIM_0 - 1).max(y0);
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if occ
+                    .buf_depth_0
+                    .get(y * OCC_DIM_0 + x)
+                    .is_some_and(|&stored| depth < stored)
+                {
+                    return 1;
+                }
+            }
+        }
+        -1
+    }
 }

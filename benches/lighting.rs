@@ -1,4 +1,4 @@
-//! Criterion benchmarks comparing XRay-Monolith R4 baseline vs Moonly enhanced algorithms.
+//! Criterion benchmarks comparing Monolith R4 baseline and Moonly enhanced algorithms.
 
 use std::hint::black_box;
 
@@ -20,11 +20,11 @@ fn build_test_reflectors(count: usize) -> Vec<GiReflectorBox> {
     out
 }
 
-fn build_test_lights(count: usize) -> Vec<XRayLight> {
+fn build_test_lights(count: usize) -> Vec<MoonlyLight> {
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let offset = (i as f32) * 2.5;
-        out.push(XRayLight::spot(
+        out.push(MoonlyLight::spot(
             Vec3::new(offset * 0.2, 3.5, 0.0),
             Vec3::NEG_Y,
             Vec3::new(3.5, 2.8, 2.1),
@@ -43,7 +43,7 @@ fn bench_smap_allocator(c: &mut Criterion) {
     let mut group = c.benchmark_group("smap_allocator");
     let mut alloc = SmapAllocator::new(4096);
 
-    group.bench_function("monolith_guillotine_36_tiles", |b| {
+    group.bench_function("monolith_critical_point_36_tiles", |b| {
         b.iter(|| {
             alloc.initialize(4096);
             let mut packed = 0_u32;

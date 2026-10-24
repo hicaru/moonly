@@ -62,29 +62,46 @@ impl SmapRect {
         let view_sx = (self.min_x + 1) as f32 / smap;
         let view_sy = (self.min_y + 1) as f32 / smap;
         let half_dim = 0.5 * view_dim;
+        let texel_offset = 0.5 / smap;
         Mat4::from_cols(
             Vec4::new(half_dim, 0.0, 0.0, 0.0),
             Vec4::new(0.0, -half_dim, 0.0, 0.0),
             Vec4::new(0.0, 0.0, 1.0, 0.0),
-            Vec4::new(half_dim + view_sx, half_dim + view_sy, bias, 1.0),
+            Vec4::new(
+                half_dim + view_sx + texel_offset,
+                half_dim + view_sy + texel_offset,
+                bias,
+                1.0,
+            ),
         )
+    }
+
+    const fn intersects(&self, other: &Self) -> bool {
+        self.max_x >= other.min_x
+            && self.max_y >= other.min_y
+            && self.min_x <= other.max_x
+            && self.min_y <= other.max_y
     }
 }
 
-/// Shadow map atlas allocator ported from `CSMAP_Allocator` (`SMAP_Allocator.h`).
+/// Shadow map atlas allocator ported from `SMAP_Allocator` (`SMAP_Allocator.h`).
 #[derive(Resource, Debug, Clone, Default, Reflect)]
 #[reflect(Resource)]
 pub struct SmapAllocator {
     /// Total atlas edge dimension in texels (`psize`).
     pub pool_size: u32,
-    /// Active free rectangles (`stack`).
+    /// Free rectangles used by the enhanced BSSF pass.
     pub free_rects: Vec<SmapRect>,
-    /// Allocated rectangles during the current pass.
+    /// Allocated rectangles during the current pass (`stack`).
     pub allocated: Vec<SmapRect>,
+    /// Failed allocation requests during the current pass.
+    pub failed_allocations: usize,
+    critical_points: Vec<IVec2>,
+    previous_smap_sizes: Vec<u32>,
 }
 
 impl SmapAllocator {
-    /// Create and initialize an allocator with `pool_size` texels (`CSMAP_Allocator::initialize`).
+    /// Create and initialize an allocator with `pool_size` texels (`SMAP_Allocator::initialize`).
     #[must_use]
     pub fn new(pool_size: u32) -> Self {
         let mut alloc = Self::default();
@@ -94,31 +111,55 @@ impl SmapAllocator {
 
     /// Reset the atlas to a single free square of `pool_size` texels (`initialize`).
     pub fn initialize(&mut self, pool_size: u32) {
-        let psize = pool_size.max(64);
-        self.pool_size = psize;
+        self.pool_size = pool_size;
         self.free_rects.clear();
         self.allocated.clear();
-        self.free_rects
-            .push(SmapRect::new(0, 0, psize - 1, psize - 1));
+        self.critical_points.clear();
+        self.failed_allocations = 0;
+        if pool_size > 0 {
+            self.free_rects
+                .push(SmapRect::new(0, 0, pool_size - 1, pool_size - 1));
+        }
     }
 
-    /// Faithful XRay-Monolith LIFO Guillotine allocation (`CSMAP_Allocator::push`).
+    /// Start a frame and preserve tile sizes for adaptive-size hysteresis.
+    pub fn begin_frame(&mut self, pool_size: u32) {
+        self.initialize(pool_size);
+    }
+
+    /// Faithful critical-point insertion-order first-fit allocation (`SMAP_Allocator::push`).
     pub fn push_monolith(&mut self, size: u32) -> Option<SmapRect> {
-        if size == 0 || size > self.pool_size {
-            return None;
+        if size <= 4 || size > self.pool_size {
+            return self.allocation_failed();
         }
-        let found_idx = (0..self.free_rects.len()).rev().find(|&idx| {
-            self.free_rects
-                .get(idx)
-                .is_some_and(|r| r.fits_square(size))
-        })?;
-        Some(self.allocate_at_index(found_idx, size))
+        if self.allocated.is_empty() {
+            let rect = SmapRect::new(0, 0, size - 1, size - 1);
+            self.add_monolith_rect(rect);
+            return Some(rect);
+        }
+        let mut point_index = 0;
+        while let Some(point) = self.critical_points.get(point_index).copied() {
+            let rect = SmapRect::new(
+                point.x as u32,
+                point.y as u32,
+                point.x as u32 + size - 1,
+                point.y as u32 + size - 1,
+            );
+            let overlaps = self.allocated.iter().any(|other| other.intersects(&rect));
+            if rect.max_x < self.pool_size && rect.max_y < self.pool_size && !overlaps {
+                self.critical_points.remove(point_index);
+                self.add_monolith_rect(rect);
+                return Some(rect);
+            }
+            point_index += 1;
+        }
+        self.allocation_failed()
     }
 
     /// Enhanced Moonly Best-Short-Side-Fit (`BSSF`) allocation that minimizes fragment waste.
     pub fn push_enhanced_bssf(&mut self, size: u32) -> Option<SmapRect> {
         if size == 0 || size > self.pool_size {
-            return None;
+            return self.allocation_failed();
         }
         let mut best_idx = None;
         let mut best_short_side = u32::MAX;
@@ -139,7 +180,44 @@ impl SmapAllocator {
                 best_idx = Some(idx);
             }
         }
-        Some(self.allocate_at_index(best_idx?, size))
+        let Some(index) = best_idx else {
+            return self.allocation_failed();
+        };
+        Some(self.allocate_at_index(index, size))
+    }
+
+    pub(crate) fn previous_smap_size(&self, index: usize) -> u32 {
+        self.previous_smap_sizes.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn record_smap_size(&mut self, index: usize, size: u32) {
+        if let Some(previous) = self.previous_smap_sizes.get_mut(index) {
+            *previous = size;
+        } else {
+            self.previous_smap_sizes.push(size);
+        }
+    }
+
+    pub(crate) fn finish_frame(&mut self, light_count: usize) {
+        self.previous_smap_sizes.truncate(light_count);
+    }
+
+    fn add_monolith_rect(&mut self, rect: SmapRect) {
+        self.allocated.push(rect);
+        let right = IVec2::new((rect.max_x + 1) as i32, rect.min_y as i32);
+        let down = IVec2::new(rect.min_x as i32, (rect.max_y + 1) as i32);
+        let limit = self.pool_size as i32;
+        if right.x < limit && right.y < limit {
+            self.critical_points.push(right);
+        }
+        if down.x < limit && down.y < limit {
+            self.critical_points.push(down);
+        }
+    }
+
+    const fn allocation_failed(&mut self) -> Option<SmapRect> {
+        self.failed_allocations += 1;
+        None
     }
 
     fn allocate_at_index(&mut self, index: usize, size: u32) -> SmapRect {
