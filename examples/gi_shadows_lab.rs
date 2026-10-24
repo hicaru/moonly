@@ -54,6 +54,10 @@ impl LabCaptureOptions {
 
 fn main() {
     let capture = LabCaptureOptions::from_env_args();
+    let config = MoonlyConfig {
+        rain_wetness: 0.65,
+        ..MoonlyConfig::default()
+    };
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -63,7 +67,7 @@ fn main() {
             }),
             ..WindowPlugin::default()
         }))
-        .add_plugins(MoonlyPlugin::enhanced())
+        .add_plugins(MoonlyPlugin::new(config))
         .insert_resource(ClearColor(Color::srgb(0.14, 0.18, 0.25)))
         .insert_resource(capture)
         .add_systems(Startup, setup_gi_lab_scene)
@@ -83,10 +87,8 @@ fn setup_gi_lab_scene(
     capture: Res<LabCaptureOptions>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MoonlyLitMaterial>>,
-    mut config: ResMut<MoonlyConfig>,
     mut post_cfg: ResMut<Hdr10PostConfig>,
 ) {
-    config.rain_wetness = 0.65;
     post_cfg.operator = TonemapOperator::AgX;
     post_cfg.exposure = 1.25;
 
