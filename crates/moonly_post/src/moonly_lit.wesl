@@ -31,23 +31,18 @@ struct MoonlyLitUniform {
     gi_color_1: vec4<f32>,
     gi_pos_range_2: vec4<f32>,
     gi_color_2: vec4<f32>,
+    blocker_0: vec4<f32>,
+    blocker_1: vec4<f32>,
+    blocker_2: vec4<f32>,
+    blocker_3: vec4<f32>,
     post_params: vec4<f32>, // x = exposure, y = contrast, z = vibrance, w = shaft_density
     mode_flags: vec4<u32>,  // x = tonemap_op, y = optics_mode, z = shadow_mode, w = ao_mode
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> mat: MoonlyLitUniform;
 
-const TWO_PI: f32 = 6.283185307179586;
 const INV_FOUR_PI: f32 = 0.07957747154594767;
 const REC709_LUMA: vec3<f32> = vec3<f32>(0.212656, 0.715158, 0.072186);
-
-fn monolith_jitter(screen_xy: vec2<f32>, rot: u32) -> vec2<f32> {
-    let cell = floor(screen_xy % vec2<f32>(64.0));
-    let phase = f32(rot) * 1.25663706;
-    let seed = fract(sin(dot(cell, vec2<f32>(12.9898, 78.233)) + phase) * 43758.5453);
-    let ang = seed * TWO_PI;
-    return vec2<f32>(cos(ang), sin(ang));
-}
 
 fn colored_ao_activision(ao: f32, albedo: vec3<f32>) -> vec3<f32> {
     let a = 2.0404 * albedo - vec3<f32>(0.3324);
@@ -70,23 +65,52 @@ fn eval_virtual_bounce(world_pos: vec3<f32>, n: vec3<f32>, pos_range: vec4<f32>,
     return col.xyz * (ndotl * atten * atten);
 }
 
-fn eval_sun_shadow_jitter(world_pos: vec3<f32>, light_dir: vec3<f32>, screen_xy: vec2<f32>, softness: f32) -> f32 {
-    if world_pos.y > 2.2 {
-        return 1.0;
+fn eval_blocker_pcss(world_pos: vec3<f32>, n: vec3<f32>, light_dir: vec3<f32>, b: vec4<f32>, softness: f32) -> f32 {
+    let origin = world_pos + n * 0.04;
+    if b.w > 0.001 {
+        let r = b.w;
+        if length(world_pos - b.xyz) <= r + 0.08 {
+            return 1.0;
+        }
+        let to_c = b.xyz - origin;
+        let t = dot(to_c, light_dir);
+        if t <= 0.05 {
+            return 1.0;
+        }
+        let closest = origin + light_dir * t;
+        let d = length(b.xyz - closest) - r;
+        let w = max(0.035 + softness * 0.14 * t, 0.035);
+        return smoothstep(-w * 0.5, w * 0.5, d);
     }
-    let t_plane = max((1.8 - world_pos.y) / max(light_dir.y, 0.15), 0.0);
-    let proj_xz = world_pos.xz + light_dir.xz * t_plane;
-    var vis = 0.0;
-    for (var r: u32 = 0u; r < 5u; r = r + 1u) {
-        let j = monolith_jitter(screen_xy, r) * softness * (0.04 + 0.02 * t_plane);
-        let p = proj_xz + j;
-        let pillar_a = length(p - vec2<f32>(-2.2, 0.0)) - 0.85;
-        let pillar_b = length(p - vec2<f32>(2.2, 0.0)) - 0.85;
-        let arch = max(abs(p.x) - 3.2, abs(p.y + 2.2) - 0.55);
-        let d_occ = min(min(pillar_a, pillar_b), arch);
-        vis = vis + smoothstep(-0.08, 0.12, d_occ);
+    if b.w < -0.001 {
+        let r = -b.w;
+        let top_y = b.y;
+        let p_xz = vec2<f32>(b.x, b.z);
+        if length(world_pos.xz - p_xz) <= r + 0.08 && world_pos.y <= top_y + 0.08 {
+            return 1.0;
+        }
+        let dir_xz = light_dir.xz;
+        let len_xz_sq = max(dot(dir_xz, dir_xz), 0.0001);
+        let t = dot(p_xz - origin.xz, dir_xz) / len_xz_sq;
+        if t <= 0.05 {
+            return 1.0;
+        }
+        let hit = origin + light_dir * t;
+        let d_rad = length(hit.xz - p_xz) - r;
+        let d_top = hit.y - top_y;
+        let d = max(d_rad, d_top);
+        let w = max(0.035 + softness * 0.14 * t, 0.035);
+        return smoothstep(-w * 0.5, w * 0.5, d);
     }
-    return vis * 0.2;
+    return 1.0;
+}
+
+fn eval_sun_shadow_pcss(world_pos: vec3<f32>, n: vec3<f32>, light_dir: vec3<f32>, softness: f32) -> f32 {
+    let v0 = eval_blocker_pcss(world_pos, n, light_dir, mat.blocker_0, softness);
+    let v1 = eval_blocker_pcss(world_pos, n, light_dir, mat.blocker_1, softness);
+    let v2 = eval_blocker_pcss(world_pos, n, light_dir, mat.blocker_2, softness);
+    let v3 = eval_blocker_pcss(world_pos, n, light_dir, mat.blocker_3, softness);
+    return min(min(v0, v1), min(v2, v3));
 }
 
 fn tonemap_dispatch(rgb: vec3<f32>, op: u32) -> vec3<f32> {
@@ -161,7 +185,7 @@ fn fragment(mesh: MoonlyVertexOut) -> @location(0) vec4<f32> {
 
     let l_sun = normalize(-mat.sun_dir_shadow_softness.xyz);
     let sun_ndotl = max(dot(n, l_sun), 0.0);
-    let sun_vis = eval_sun_shadow_jitter(w_pos, l_sun, mesh.position.xy, mat.sun_dir_shadow_softness.w);
+    let sun_vis = eval_sun_shadow_pcss(w_pos, n, l_sun, mat.sun_dir_shadow_softness.w);
     let h_sun = normalize(l_sun + v_dir);
     let sun_spec = pow(max(dot(n, h_sun), 0.0), spec_power) * gloss * 0.45;
     let direct_sun = mat.sun_color_wetness.xyz * ((albedo * sun_ndotl + vec3<f32>(sun_spec)) * sun_vis);
