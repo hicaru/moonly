@@ -1,0 +1,13 @@
+[package]
+name = "moonly_gi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bevy.workspace = true
+moonly_core.workspace = true
+
+[lints]
+workspace = true
