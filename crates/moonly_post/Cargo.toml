@@ -1,0 +1,16 @@
+[package]
+name = "moonly_post"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bevy.workspace = true
+moonly_core.workspace = true
+moonly_gi.workspace = true
+moonly_shadows.workspace = true
+moonly_volumetrics.workspace = true
+
+[lints]
+workspace = true
