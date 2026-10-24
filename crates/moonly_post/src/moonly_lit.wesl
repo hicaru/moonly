@@ -66,15 +66,15 @@ fn eval_virtual_bounce(world_pos: vec3<f32>, n: vec3<f32>, pos_range: vec4<f32>,
 }
 
 fn eval_blocker_pcss(world_pos: vec3<f32>, n: vec3<f32>, light_dir: vec3<f32>, b: vec4<f32>, softness: f32) -> f32 {
-    let origin = world_pos + n * 0.04;
+    let origin = world_pos + n * 0.03;
     if b.w > 0.001 {
         let r = b.w;
-        if length(world_pos - b.xyz) <= r + 0.08 {
+        if world_pos.y > 0.02 && length(world_pos - b.xyz) <= r + 0.04 {
             return 1.0;
         }
         let to_c = b.xyz - origin;
         let t = dot(to_c, light_dir);
-        if t <= 0.05 {
+        if t <= 0.02 {
             return 1.0;
         }
         let closest = origin + light_dir * t;
@@ -86,13 +86,13 @@ fn eval_blocker_pcss(world_pos: vec3<f32>, n: vec3<f32>, light_dir: vec3<f32>, b
         let r = -b.w;
         let top_y = b.y;
         let p_xz = vec2<f32>(b.x, b.z);
-        if length(world_pos.xz - p_xz) <= r + 0.08 && world_pos.y <= top_y + 0.08 {
+        if world_pos.y > 0.02 && length(world_pos.xz - p_xz) <= r + 0.04 && world_pos.y <= top_y + 0.04 {
             return 1.0;
         }
         let dir_xz = light_dir.xz;
         let len_xz_sq = max(dot(dir_xz, dir_xz), 0.0001);
         let t = dot(p_xz - origin.xz, dir_xz) / len_xz_sq;
-        if t <= 0.05 {
+        if t <= 0.02 {
             return 1.0;
         }
         let hit = origin + light_dir * t;
