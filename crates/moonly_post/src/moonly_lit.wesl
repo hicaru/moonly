@@ -69,7 +69,8 @@ fn eval_blocker_pcss(world_pos: vec3<f32>, n: vec3<f32>, light_dir: vec3<f32>, b
     let origin = world_pos + n * 0.03;
     if b.w > 0.001 {
         let r = b.w;
-        if world_pos.y > 0.02 && length(world_pos - b.xyz) <= r + 0.04 {
+        let from_center = world_pos - b.xyz;
+        if length(from_center) <= r + 0.04 && dot(n, from_center) > 0.0 {
             return 1.0;
         }
         let to_c = b.xyz - origin;
