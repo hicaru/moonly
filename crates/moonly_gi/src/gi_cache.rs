@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use bevy::prelude::*;
+use bevy::{ecs::entity::EntityHashMap, prelude::*};
 use moonly_core::{
     GiRadiosityConfig, MoonlyConfig, MoonlyLight, MoonlyLightFlags, MoonlyLightType,
     MoonlyPipelineTier, VirtualGiLight,
@@ -52,7 +50,7 @@ struct CachedLight {
 /// Per-entity virtual lights retained across unchanged frames.
 #[derive(Resource, Debug, Default)]
 pub struct GiLightCache {
-    entries: HashMap<Entity, CachedLight>,
+    entries: EntityHashMap<CachedLight>,
 }
 
 impl GiLightCache {

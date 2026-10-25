@@ -16,7 +16,9 @@ const OMNIPART_FACE_COUNT: usize = 6;
 pub struct GiSceneInputs<'w, 's> {
     config: Res<'w, MoonlyConfig>,
     lights: Query<'w, 's, (Entity, &'static MoonlyLight)>,
+    changed_lights: Query<'w, 's, (), Changed<MoonlyLight>>,
     reflectors: Query<'w, 's, &'static GiReflectorBox>,
+    changed_reflectors: Query<'w, 's, (), Changed<GiReflectorBox>>,
     geometry: Res<'w, StaticGiGeometry>,
 }
 
@@ -24,6 +26,7 @@ pub struct GiSceneInputs<'w, 's> {
 pub struct GiFrameBuffers {
     reflectors: Vec<GiReflectorBox>,
     scratch: Vec<GiReflectorBox>,
+    last_revision: u64,
 }
 
 /// Update cached virtual lights from stable source light entities.
@@ -34,11 +37,24 @@ pub fn update_gi_light_field(
     mut package: ResMut<VirtualGiLightPackage>,
     mut buffers: Local<GiFrameBuffers>,
 ) {
+    let geo_rev = inputs.geometry.revision();
+    if !inputs.config.is_changed()
+        && geo_rev == buffers.last_revision
+        && inputs.changed_lights.is_empty()
+        && inputs.changed_reflectors.is_empty()
+        && inputs.lights.iter().count() == cache.light_count()
+        && inputs.reflectors.iter().count() == buffers.reflectors.len()
+        && field.virtual_lights.len() == package.lights.len()
+    {
+        return;
+    }
+    buffers.last_revision = geo_rev;
     field.virtual_lights.clear();
     cache.retain(&inputs.lights);
     let GiFrameBuffers {
         reflectors,
         scratch,
+        ..
     } = &mut *buffers;
     reflectors.clear();
     reflectors.extend(inputs.reflectors.iter().copied());
