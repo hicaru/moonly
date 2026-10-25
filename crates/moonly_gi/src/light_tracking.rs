@@ -29,6 +29,7 @@ pub(crate) fn update_light_tracking(inputs: LightTrackingInputs) {
     let Some(environment) = environment else {
         return;
     };
+    let toward_sun = -environment.sun_direction.normalize_or_zero();
     for (transform, mut tracker) in &mut trackers {
         let origin = transform.translation();
         for _ in 0..SAMPLES_PER_UPDATE {
@@ -39,7 +40,6 @@ pub(crate) fn update_light_tracking(inputs: LightTrackingInputs) {
                 trace_visibility(&geometry, origin, direction, STATIC_RAY_DISTANCE_METERS);
             tracker.record_sample(index, visible);
         }
-        let toward_sun = -environment.sun_direction.normalize_or_zero();
         tracker.sun_value =
             trace_visibility(&geometry, origin, toward_sun, SUN_RAY_DISTANCE_METERS);
         tracker.approximate_local = approximate_local_lights(origin, &lights, &geometry);
@@ -57,11 +57,7 @@ fn trace_visibility(
     }
     let biased_origin = origin + direction * RAY_ORIGIN_BIAS_METERS;
     let ray = GiRayQuery::new(biased_origin, direction, RAY_ORIGIN_BIAS_METERS, distance);
-    if geometry.nearest_hit(ray).is_some() {
-        0.0
-    } else {
-        1.0
-    }
+    if geometry.any_hit(ray) { 0.0 } else { 1.0 }
 }
 
 fn approximate_local_lights(
@@ -69,11 +65,13 @@ fn approximate_local_lights(
     lights: &Query<&MoonlyLight>,
     geometry: &StaticGiGeometry,
 ) -> Vec3 {
-    lights
-        .iter()
-        .filter(|light| !matches!(light.light_type, MoonlyLightType::Direct))
-        .map(|light| local_light_contribution(origin, light, geometry))
-        .sum()
+    let mut sum = Vec3::ZERO;
+    for light in lights {
+        if !matches!(light.light_type, MoonlyLightType::Direct) {
+            sum += local_light_contribution(origin, light, geometry);
+        }
+    }
+    sum
 }
 
 fn local_light_contribution(
@@ -81,12 +79,18 @@ fn local_light_contribution(
     light: &MoonlyLight,
     geometry: &StaticGiGeometry,
 ) -> Vec3 {
-    let delta = light.position - origin;
-    let distance = delta.length();
-    if distance <= RAY_ORIGIN_BIAS_METERS || distance >= light.range || light.range <= 0.0 {
+    if light.range <= 0.0 {
         return Vec3::ZERO;
     }
-    let direction = delta / distance;
+    let delta = light.position - origin;
+    let dist_sq = delta.length_squared();
+    let min_sq = RAY_ORIGIN_BIAS_METERS * RAY_ORIGIN_BIAS_METERS;
+    let max_sq = light.range * light.range;
+    if dist_sq <= min_sq || dist_sq >= max_sq {
+        return Vec3::ZERO;
+    }
+    let distance = dist_sq.sqrt();
+    let direction = delta * distance.recip();
     if matches!(light.light_type, MoonlyLightType::Spot)
         && direction.dot(-light.direction) < (light.cone_angle * 0.5).cos()
     {
@@ -95,8 +99,9 @@ fn local_light_contribution(
     if trace_visibility(geometry, origin, direction, distance) == 0.0 {
         return Vec3::ZERO;
     }
-    let attenuation = (1.0 - distance / light.range).powi(2);
-    light.color * attenuation * (LOCAL_LIGHT_SCALE + LOCAL_LIGHT_FLOW)
+    let falloff = 1.0 - distance / light.range;
+    let attenuation = falloff * falloff;
+    light.color * (attenuation * (LOCAL_LIGHT_SCALE + LOCAL_LIGHT_FLOW))
 }
 
 #[cfg(test)]
