@@ -1,11 +1,13 @@
 //! Virtual GI bounce generation with Monolith and enhanced reflector models.
 
 use bevy::prelude::*;
-use moonly_core::{GiRadiosityConfig, MoonlyLight, MoonlyLightFlags, VirtualGiLight};
+use moonly_core::{
+    GiRadiosityConfig, MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight,
+};
 
 pub(crate) use crate::gi_intersection::raycast_all_reflectors;
 use crate::gi_ray::{GiRayGeometry, GiRayQuery};
-use crate::gi_sampling::{MoonlyRandom, enhanced_photon_dir, monolith_photon_dir};
+use crate::gi_sampling::{EnhancedLightBasis, MONOLITH_LUT, MoonlyRandom, monolith_photon_dir};
 pub use crate::gi_system::update_gi_light_field;
 
 /// Minimum virtual bounce light radius in meters for the enhanced model.
@@ -71,23 +73,57 @@ pub fn gi_generate_monolith<G: GiRayGeometry + ?Sized>(
     geometry: &G,
     out_virtual: &mut Vec<VirtualGiLight>,
 ) {
-    if !valid_gi_inputs(light, cfg) {
+    if !valid_gi_inputs(light, cfg) || matches!(light.light_type, MoonlyLightType::Direct) {
         return;
     }
     let first = out_virtual.len();
     let Some(ray_count) = cfg.num_photons.checked_mul(8) else {
         return;
     };
-    let mut random = MoonlyRandom::new();
-    for _ in 0..ray_count {
-        let Some(direction) = monolith_photon_dir(light, &mut random) else {
+    let lut = &*MONOLITH_LUT;
+    let is_point = matches!(light.light_type, MoonlyLightType::Point);
+    let tan_cone = if is_point {
+        0.0
+    } else {
+        light.cone_angle.tan()
+    };
+    let inv_range = light.range.recip();
+    let mut fallback_rng = (ray_count as usize > lut.point_dirs.len()).then(MoonlyRandom::new);
+
+    for idx in 0..(ray_count as usize) {
+        let direction = if is_point {
+            if let Some(&dir) = lut.point_dirs.get(idx) {
+                if dir == Vec3::ZERO {
+                    continue;
+                }
+                dir
+            } else if let Some(rng) = fallback_rng.as_mut() {
+                let Some(dir) = monolith_photon_dir(light, rng) else {
+                    continue;
+                };
+                dir
+            } else {
+                continue;
+            }
+        } else if let Some(&(random_dir, unit_offset)) = lut.spot_samples.get(idx) {
+            let dir = (light.direction + random_dir * (unit_offset * tan_cone)).normalize_or_zero();
+            if dir == Vec3::ZERO {
+                continue;
+            }
+            dir
+        } else if let Some(rng) = fallback_rng.as_mut() {
+            let Some(dir) = monolith_photon_dir(light, rng) else {
+                continue;
+            };
+            dir
+        } else {
             continue;
         };
         let ray = GiRayQuery::new(light.position, direction, 0.0, light.range);
         let Some(hit) = geometry.nearest_hit(ray) else {
             continue;
         };
-        let energy = hit.normal.dot(-direction) * (1.0 - hit.distance / light.range);
+        let energy = hit.normal.dot(-direction) * (1.0 - hit.distance * inv_range);
         if !energy.is_finite() || energy < 0.0 || energy < cfg.energy_clip {
             continue;
         }
@@ -112,6 +148,9 @@ pub fn gi_generate_enhanced(
     if !valid_gi_inputs(light, cfg) || !cfg.clip_distance.is_finite() {
         return;
     }
+    let Some(basis) = EnhancedLightBasis::new(light, cfg.num_photons, cfg.cosine_weighted) else {
+        return;
+    };
     local_scratch.clear();
     local_scratch.extend(
         reflectors
@@ -119,11 +158,12 @@ pub fn gi_generate_enhanced(
             .filter(|r| r.overlaps_sphere(light.position, light.range))
             .copied(),
     );
+    if local_scratch.is_empty() {
+        return;
+    }
+    let inv_photons = (cfg.num_photons as f32).recip();
     for idx in 0..cfg.num_photons {
-        let Some(dir) = enhanced_photon_dir(light, idx, cfg.num_photons, cfg.cosine_weighted)
-        else {
-            continue;
-        };
+        let dir = basis.direction(idx);
         let Some((dist, normal, albedo)) = raycast_all_reflectors(
             light.position,
             dir,
@@ -138,7 +178,7 @@ pub fn gi_generate_enhanced(
         } else {
             1.0
         };
-        let weight = albedo * (cos_boost / cfg.num_photons as f32);
+        let weight = albedo * (cos_boost * inv_photons);
         push_virtual_bounce(
             light,
             cfg,
@@ -167,40 +207,46 @@ fn normalize_monolith_lights(
     first: usize,
     out_virtual: &mut Vec<VirtualGiLight>,
 ) {
+    let keep = cfg.num_photons as usize;
     let Some(candidates) = out_virtual.get_mut(first..) else {
         return;
     };
-    candidates.sort_unstable_by(|a, b| b.color.x.total_cmp(&a.color.x));
-    out_virtual.truncate(first.saturating_add(cfg.num_photons as usize));
-    let total_energy: f32 = out_virtual
-        .get(first..)
-        .unwrap_or_default()
-        .iter()
-        .map(|light| light.color.x)
-        .sum();
+    if candidates.len() > keep {
+        let _ = candidates.select_nth_unstable_by(keep, |a, b| b.color.x.total_cmp(&a.color.x));
+    }
+    out_virtual.truncate(first.saturating_add(keep));
+    let Some(kept) = out_virtual.get_mut(first..) else {
+        return;
+    };
+    kept.sort_unstable_by(|a, b| b.color.x.total_cmp(&a.color.x));
+    let total_energy: f32 = kept.iter().map(|l| l.color.x).sum();
     if !total_energy.is_finite() || total_energy <= 0.0 {
         out_virtual.truncate(first);
         return;
     }
     let scale = cfg.reflectivity / total_energy;
-    let intensity = (light.color.x + light.color.y + light.color.z) / 3.0;
-    let mut index = 0_usize;
-    out_virtual.retain(|candidate| {
-        let current = index;
-        index += 1;
-        let energy = intensity * candidate.color.x * scale;
-        let range = (energy - MONOLITH_MIN_ENERGY) / MONOLITH_MIN_ENERGY;
-        current < first || (energy >= cfg.energy_clip && range >= MONOLITH_MIN_RANGE)
-    });
-    let Some(candidates) = out_virtual.get_mut(first..) else {
-        return;
-    };
-    for candidate in candidates {
-        let energy = candidate.color.x * scale;
+    let intensity = (light.color.x + light.color.y + light.color.z) * (1.0 / 3.0);
+    let inv_min_energy = MONOLITH_MIN_ENERGY.recip();
+    let mut write = first;
+    for read in first..out_virtual.len() {
+        let Some(&cand) = out_virtual.get(read) else {
+            break;
+        };
+        let energy = cand.color.x * scale;
         let reflected_energy = intensity * energy;
-        candidate.color = light.color * energy;
-        candidate.range = (reflected_energy - MONOLITH_MIN_ENERGY) / MONOLITH_MIN_ENERGY;
+        let range = (reflected_energy - MONOLITH_MIN_ENERGY) * inv_min_energy;
+        if reflected_energy >= cfg.energy_clip && range >= MONOLITH_MIN_RANGE {
+            if let Some(slot) = out_virtual.get_mut(write) {
+                *slot = VirtualGiLight {
+                    color: light.color * energy,
+                    range,
+                    ..cand
+                };
+            }
+            write += 1;
+        }
     }
+    out_virtual.truncate(write);
 }
 
 fn push_virtual_bounce(
