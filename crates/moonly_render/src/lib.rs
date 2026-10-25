@@ -71,7 +71,7 @@ use moonly_volumetrics::{MoonlyFroxelConfig, MoonlyVolumetricsPlugin, SunShaftsC
 pub use camera::{MoonlyCamera, MoonlyCameraRole, MoonlyDebugView, MoonlyLinearOutput};
 pub use caster_visibility::MoonlyCasterVisibility;
 pub use diagnostics::{GpuTiming, MoonlyGpuDiagnostics, MoonlyPass};
-pub use graph::MoonlyRender;
+pub use graph::{MoonlyRender, MoonlyRenderSystems};
 pub use material_lut::{MoonlyMaterialLut, generate_moonly_material_lut};
 pub use surface::MoonlySurface;
 

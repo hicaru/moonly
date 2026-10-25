@@ -25,12 +25,30 @@ use crate::{
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct MoonlyRender;
 
+/// Ordered system sets in the [`MoonlyRender`] camera schedule.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MoonlyRenderSystems {
+    DeferredPass,
+    TransmissivePass,
+    MainPass,
+    PostProcess,
+}
+
 pub(crate) fn base_schedule() -> Schedule {
     let mut schedule = Schedule::new(MoonlyRender);
     schedule.set_build_settings(ScheduleBuildSettings {
         auto_insert_apply_deferred: false,
         ..Default::default()
     });
+    schedule.configure_sets(
+        (
+            MoonlyRenderSystems::DeferredPass,
+            MoonlyRenderSystems::TransmissivePass,
+            MoonlyRenderSystems::MainPass,
+            MoonlyRenderSystems::PostProcess,
+        )
+            .chain(),
+    );
     schedule
 }
 

@@ -1,6 +1,7 @@
 use bevy::{
     camera::Hdr,
-    ecs::query::QueryItem,
+    core_pipeline::schedule::Core3d,
+    ecs::{lifecycle::HookContext, query::QueryItem, world::DeferredWorld},
     pbr::ScreenSpaceTransmission,
     prelude::*,
     render::{
@@ -24,6 +25,7 @@ pub enum MoonlyCameraRole {
 /// Opt-in marker for a camera that Moonly renders.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
 #[reflect(Component)]
+#[component(on_insert = on_insert_moonly_camera, on_remove = on_remove_moonly_camera)]
 #[require(
     Camera3d,
     Hdr,
@@ -36,6 +38,19 @@ pub enum MoonlyCameraRole {
 pub struct MoonlyCamera {
     /// Pipeline role for this camera.
     pub role: MoonlyCameraRole,
+}
+
+fn on_insert_moonly_camera(mut world: DeferredWorld, context: HookContext) {
+    world
+        .commands()
+        .entity(context.entity)
+        .insert((CameraRenderGraph::new(MoonlyRender), Msaa::Off));
+}
+
+fn on_remove_moonly_camera(mut world: DeferredWorld, context: HookContext) {
+    if let Ok(mut entity) = world.commands().get_entity(context.entity) {
+        entity.try_insert(CameraRenderGraph::new(Core3d));
+    }
 }
 
 impl SyncComponent<RenderApp> for MoonlyCamera {
