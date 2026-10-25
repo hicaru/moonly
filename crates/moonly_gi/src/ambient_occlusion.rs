@@ -12,15 +12,17 @@ pub const DEFAULT_HDAO_ACCEPT_RADIUS: f32 = 0.03;
 pub use moonly_core::AmbientOcclusionSettings;
 
 /// Evaluate Activision S2016 multi-bounce colored AO (`compute_colored_ao` in `common_functions.h`).
+#[inline]
 #[must_use]
 pub fn compute_colored_ao_cpu(ao: f32, albedo: Vec3) -> Vec3 {
     let ao_c = ao.clamp(0.0, 1.0);
-    let ao_v = Vec3::splat(ao_c);
-    let a = 2.0404 * albedo - Vec3::splat(0.3324);
-    let b = -4.7951 * albedo + Vec3::splat(0.6417);
-    let c = 2.7552 * albedo + Vec3::splat(0.6903);
-    let poly = ((ao_v * a + b) * ao_c + c) * ao_c;
-    ao_v.max(poly)
+    let ch = |alb: f32| {
+        let a = 2.0404 * alb - 0.3324;
+        let b = -4.7951 * alb + 0.6417;
+        let c = 2.7552 * alb + 0.6903;
+        (((ao_c * a + b) * ao_c + c) * ao_c).max(ao_c)
+    };
+    Vec3::new(ch(albedo.x), ch(albedo.y), ch(albedo.z))
 }
 
 /// Accumulate reflected virtual GI lights at a world surface point (`accum_reflected`).
