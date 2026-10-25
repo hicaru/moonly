@@ -1,11 +1,9 @@
-use bevy::prelude::*;
-
-use crate::gi_intersection::intersect_ray_aabb;
-use crate::gi_ray::{GiRayGeometry, GiRayHit, GiRayQuery};
+use bevy::{math::Vec3A, prelude::*};
 
 const MOONLY_TRIANGLE_EPSILON: f32 = 0.000_01;
 const BVH_LEAF_TRIANGLES: usize = 4;
-const NO_CHILD: u32 = u32::MAX;
+const LEAF_FLAG: u32 = 0x8000_0000;
+const SPLIT_EXTENT_EPSILON: f32 = 1.0e-5;
 
 /// Static world-space triangle prepared for GI traversal.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,10 +17,9 @@ impl GiTriangle {
     /// Create a valid triangle and compute its geometric winding normal.
     #[must_use]
     pub fn new(vertices: [Vec3; 3], cull_backfaces: bool) -> Option<Self> {
-        let normal = (vertices.get(1)? - vertices.first()?)
-            .cross(vertices.get(2)? - vertices.first()?)
-            .normalize_or_zero();
-        if normal == Vec3::ZERO || vertices.iter().any(|vertex| !vertex.is_finite()) {
+        let [v0, v1, v2] = vertices;
+        let normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
+        if normal == Vec3::ZERO || !v0.is_finite() || !v1.is_finite() || !v2.is_finite() {
             return None;
         }
         Some(Self {
@@ -32,58 +29,87 @@ impl GiTriangle {
         })
     }
 
-    fn bounds(&self) -> GiBounds {
-        self.vertices
-            .iter()
-            .fold(GiBounds::EMPTY, |bounds, vertex| bounds.include(*vertex))
+    #[inline]
+    fn simd_bounds_and_sum3(&self) -> (Vec3A, Vec3A, Vec3A) {
+        let [a, b, c] = self.vertices;
+        let (v0, v1, v2) = (Vec3A::from(a), Vec3A::from(b), Vec3A::from(c));
+        (v0.min(v1).min(v2), v0.max(v1).max(v2), v0 + v1 + v2)
     }
 
-    fn centroid(&self) -> Vec3 {
-        self.vertices.iter().copied().sum::<Vec3>() / 3.0
+    #[inline]
+    fn axis_sum3(&self, axis: usize) -> f32 {
+        let [v0, v1, v2] = self.vertices;
+        match axis {
+            0 => v0.x + v1.x + v2.x,
+            1 => v0.y + v1.y + v2.y,
+            _ => v0.z + v1.z + v2.z,
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-struct GiBounds {
-    min: Vec3,
-    max: Vec3,
+struct NodeBounds {
+    bmin: Vec3A,
+    bmax: Vec3A,
+    cmin: Vec3A,
+    cmax: Vec3A,
 }
 
-impl GiBounds {
+impl NodeBounds {
     const EMPTY: Self = Self {
-        min: Vec3::splat(f32::INFINITY),
-        max: Vec3::splat(f32::NEG_INFINITY),
+        bmin: Vec3A::splat(f32::INFINITY),
+        bmax: Vec3A::splat(f32::NEG_INFINITY),
+        cmin: Vec3A::splat(f32::INFINITY),
+        cmax: Vec3A::splat(f32::NEG_INFINITY),
     };
 
-    fn include(mut self, point: Vec3) -> Self {
-        self.min = self.min.min(point);
-        self.max = self.max.max(point);
-        self
+    #[inline]
+    fn include(&mut self, tri: &GiTriangle) {
+        let (tmin, tmax, sum3) = tri.simd_bounds_and_sum3();
+        self.bmin = self.bmin.min(tmin);
+        self.bmax = self.bmax.max(tmax);
+        self.cmin = self.cmin.min(sum3);
+        self.cmax = self.cmax.max(sum3);
     }
 
-    fn join(self, other: Self) -> Self {
-        self.include(other.min).include(other.max)
+    #[inline]
+    fn from_slice(triangles: &[GiTriangle]) -> Self {
+        let mut stats = Self::EMPTY;
+        for tri in triangles {
+            stats.include(tri);
+        }
+        stats
     }
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 struct BvhNode {
-    bounds: GiBounds,
-    left: u32,
-    right: u32,
-    first_triangle: u32,
-    triangle_count: u32,
+    min: Vec3,
+    left_or_first: u32,
+    max: Vec3,
+    right_or_count: u32,
 }
 
 impl BvhNode {
-    const fn leaf(bounds: GiBounds, first_triangle: usize, triangle_count: usize) -> Self {
+    #[inline]
+    fn leaf(stats: &NodeBounds, first_triangle: usize, triangle_count: usize) -> Self {
         Self {
-            bounds,
-            left: NO_CHILD,
-            right: NO_CHILD,
-            first_triangle: first_triangle as u32,
-            triangle_count: triangle_count as u32,
+            min: Vec3::from(stats.bmin),
+            left_or_first: first_triangle as u32,
+            max: Vec3::from(stats.bmax),
+            right_or_count: LEAF_FLAG | (triangle_count as u32),
         }
+    }
+
+    #[inline]
+    const fn is_leaf(self) -> bool {
+        (self.right_or_count & LEAF_FLAG) != 0
+    }
+
+    #[inline]
+    const fn triangle_count(self) -> usize {
+        (self.right_or_count & !LEAF_FLAG) as usize
     }
 }
 
@@ -101,7 +127,12 @@ impl GiTriangleBvh {
         self.nodes.clear();
         std::mem::swap(&mut self.triangles, triangles);
         if !self.triangles.is_empty() {
-            build_node(&mut self.triangles, 0, &mut self.nodes);
+            let estimated_nodes = (self.triangles.len() / 2).saturating_add(1);
+            if self.nodes.capacity() < estimated_nodes {
+                self.nodes.reserve(estimated_nodes - self.nodes.len());
+            }
+            let root_stats = NodeBounds::from_slice(&self.triangles);
+            build_node(&mut self.triangles, 0, root_stats, &mut self.nodes);
         }
     }
 
@@ -123,137 +154,98 @@ impl GiTriangleBvh {
         self.triangles.capacity() * size_of::<GiTriangle>()
             + self.nodes.capacity() * size_of::<BvhNode>()
     }
-
-    fn traverse(&self, node_index: u32, ray: GiRayQuery, best: &mut Option<GiRayHit>) {
-        let Ok(node_index) = usize::try_from(node_index) else {
-            return;
-        };
-        let Some(node) = self.nodes.get(node_index) else {
-            return;
-        };
-        let max_distance = best.map_or(ray.max_distance, |hit| hit.distance);
-        let Some((distance, _)) =
-            intersect_ray_aabb(ray.origin, ray.direction, node.bounds.min, node.bounds.max)
-        else {
-            return;
-        };
-        if distance > max_distance {
-            return;
-        }
-        if node.left == NO_CHILD {
-            self.intersect_leaf(node, ray, best);
-            return;
-        }
-        self.traverse(node.left, ray, best);
-        self.traverse(node.right, ray, best);
-    }
-
-    fn intersect_leaf(&self, node: &BvhNode, ray: GiRayQuery, best: &mut Option<GiRayHit>) {
-        let start = node.first_triangle as usize;
-        let end = start.saturating_add(node.triangle_count as usize);
-        let Some(triangles) = self.triangles.get(start..end) else {
-            return;
-        };
-        for triangle in triangles {
-            let max_distance = best.map_or(ray.max_distance, |hit| hit.distance);
-            if let Some(distance) = intersect_triangle(triangle, ray, max_distance) {
-                *best = Some(GiRayHit {
-                    distance,
-                    normal: triangle.normal,
-                    albedo: Vec3::ONE,
-                });
-            }
-        }
-    }
 }
 
-impl GiRayGeometry for GiTriangleBvh {
-    fn nearest_hit(&self, ray: GiRayQuery) -> Option<GiRayHit> {
-        if !valid_ray(ray) {
-            return None;
-        }
-        let mut best = None;
-        self.traverse(0, ray, &mut best);
-        best
-    }
-}
-
-fn valid_ray(ray: GiRayQuery) -> bool {
-    ray.origin.is_finite()
-        && ray.direction.is_finite()
-        && ray.direction != Vec3::ZERO
-        && ray.min_distance.is_finite()
-        && ray.max_distance.is_finite()
-        && ray.max_distance > 0.0
-}
-
-fn build_node(triangles: &mut [GiTriangle], first: usize, nodes: &mut Vec<BvhNode>) -> u32 {
-    let bounds = triangles
-        .iter()
-        .fold(GiBounds::EMPTY, |bounds, tri| bounds.join(tri.bounds()));
+fn build_node(
+    triangles: &mut [GiTriangle],
+    first: usize,
+    stats: NodeBounds,
+    nodes: &mut Vec<BvhNode>,
+) -> u32 {
     let node_index = nodes.len() as u32;
+    nodes.push(BvhNode::leaf(&stats, first, triangles.len()));
     if triangles.len() <= BVH_LEAF_TRIANGLES {
-        nodes.push(BvhNode::leaf(bounds, first, triangles.len()));
         return node_index;
     }
-    nodes.push(BvhNode::leaf(bounds, first, 0));
-    let extent = bounds.max - bounds.min;
-    let axis = if extent.x >= extent.y && extent.x >= extent.z {
+    let c_ext = stats.cmax - stats.cmin;
+    let axis = if c_ext.x >= c_ext.y && c_ext.x >= c_ext.z {
         0
-    } else if extent.y >= extent.z {
+    } else if c_ext.y >= c_ext.z {
         1
     } else {
         2
     };
-    triangles.sort_unstable_by(|a, b| {
-        axis_value(a.centroid(), axis).total_cmp(&axis_value(b.centroid(), axis))
-    });
-    let middle = triangles.len() / 2;
-    let Some((left, right)) = triangles.split_at_mut_checked(middle) else {
+    let span = [c_ext.x, c_ext.y, c_ext.z]
+        .get(axis)
+        .copied()
+        .unwrap_or(0.0);
+    let (mid, left_stats, right_stats) = if span > SPLIT_EXTENT_EPSILON {
+        let sum = [
+            stats.cmin.x + stats.cmax.x,
+            stats.cmin.y + stats.cmax.y,
+            stats.cmin.z + stats.cmax.z,
+        ];
+        partition_midpoint(triangles, axis, 0.5 * sum.get(axis).copied().unwrap_or(0.0))
+    } else {
+        partition_median_fallback(triangles, axis)
+    };
+    let Some((left, right)) = triangles.split_at_mut_checked(mid) else {
         return node_index;
     };
-    let left_index = build_node(left, first, nodes);
-    let right_index = build_node(right, first + middle, nodes);
+    let left_index = build_node(left, first, left_stats, nodes);
+    let right_index = build_node(right, first + mid, right_stats, nodes);
     if let Some(node) = nodes.get_mut(node_index as usize) {
-        node.left = left_index;
-        node.right = right_index;
+        node.left_or_first = left_index;
+        node.right_or_count = right_index;
     }
     node_index
 }
 
-const fn axis_value(value: Vec3, axis: usize) -> f32 {
-    match axis {
-        0 => value.x,
-        1 => value.y,
-        _ => value.z,
+#[inline]
+fn partition_midpoint(
+    triangles: &mut [GiTriangle],
+    axis: usize,
+    split_val: f32,
+) -> (usize, NodeBounds, NodeBounds) {
+    let mut left_stats = NodeBounds::EMPTY;
+    let mut right_stats = NodeBounds::EMPTY;
+    let mut split = 0_usize;
+    for i in 0..triangles.len() {
+        let Some(&tri) = triangles.get(i) else {
+            break;
+        };
+        if tri.axis_sum3(axis) < split_val {
+            left_stats.include(&tri);
+            triangles.swap(i, split);
+            split += 1;
+        } else {
+            right_stats.include(&tri);
+        }
     }
+    if split == 0 || split == triangles.len() {
+        return partition_median_fallback(triangles, axis);
+    }
+    (split, left_stats, right_stats)
 }
 
-fn intersect_triangle(triangle: &GiTriangle, ray: GiRayQuery, max_distance: f32) -> Option<f32> {
-    let first = triangle.vertices.first()?;
-    let edge1 = triangle.vertices.get(1)? - first;
-    let edge2 = triangle.vertices.get(2)? - first;
-    let pvec = ray.direction.cross(edge2);
-    let determinant = edge1.dot(pvec);
-    if (triangle.cull_backfaces && determinant < MOONLY_TRIANGLE_EPSILON)
-        || (!triangle.cull_backfaces && determinant.abs() < MOONLY_TRIANGLE_EPSILON)
-    {
-        return None;
-    }
-    let inverse = determinant.recip();
-    let tvec = ray.origin - first;
-    let u = tvec.dot(pvec) * inverse;
-    if !(0.0..=1.0).contains(&u) {
-        return None;
-    }
-    let qvec = tvec.cross(edge1);
-    let v = ray.direction.dot(qvec) * inverse;
-    if v < 0.0 || u + v > 1.0 {
-        return None;
-    }
-    let distance = edge2.dot(qvec) * inverse;
-    (distance > 0.0 && distance >= ray.min_distance && distance < max_distance).then_some(distance)
+#[inline]
+fn partition_median_fallback(
+    triangles: &mut [GiTriangle],
+    axis: usize,
+) -> (usize, NodeBounds, NodeBounds) {
+    let mid = triangles.len() / 2;
+    let _ = triangles
+        .select_nth_unstable_by(mid, |a, b| a.axis_sum3(axis).total_cmp(&b.axis_sum3(axis)));
+    let (left, right) = triangles.split_at(mid);
+    (
+        mid,
+        NodeBounds::from_slice(left),
+        NodeBounds::from_slice(right),
+    )
 }
 
 #[cfg(test)]
+use crate::gi_ray::{GiRayGeometry, GiRayQuery};
+#[cfg(test)]
 mod tests;
+mod traverse;
