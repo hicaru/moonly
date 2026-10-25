@@ -52,13 +52,18 @@ pub struct LocalShadowBatches {
 
 impl LocalShadowBatches {
     /// Rebuild all batches and retain every valid shadow view.
+    #[inline]
     pub fn rebuild(&mut self, package: &LightPackage, config: &MoonlyConfig, camera_pos: Vec3) {
         let pool_size = config.smap_pool_size.max(8);
         self.active_batches = 0;
         for batch in &mut self.batches {
             batch.clear(pool_size);
         }
-        self.previous_sizes.reserve(package.v_shadowed.len());
+        let needed = package.v_shadowed.len();
+        if self.previous_sizes.capacity() < needed {
+            self.previous_sizes
+                .reserve(needed - self.previous_sizes.len());
+        }
         for (light_index, light) in package.v_shadowed.iter().enumerate() {
             let previous = self.previous_sizes.get(light_index).copied().unwrap_or(0);
             let mut xform =
@@ -70,6 +75,7 @@ impl LocalShadowBatches {
         self.previous_sizes.truncate(package.v_shadowed.len());
     }
 
+    #[inline]
     fn push_view(
         &mut self,
         light_index: usize,
@@ -104,6 +110,7 @@ impl LocalShadowBatches {
         }
     }
 
+    #[inline]
     fn record_size(&mut self, index: usize, size: u32) {
         if let Some(previous) = self.previous_sizes.get_mut(index) {
             *previous = size;
@@ -112,11 +119,13 @@ impl LocalShadowBatches {
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn batch_count(&self) -> usize {
         self.active_batches + usize::from(self.view_count() > 0)
     }
 
+    #[inline]
     #[must_use]
     pub fn view_count(&self) -> usize {
         self.batches.iter().map(|batch| batch.views.len()).sum()
