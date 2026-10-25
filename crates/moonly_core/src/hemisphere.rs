@@ -58,6 +58,7 @@ pub const HEMI_SAMPLE_DIRS: [Vec3; HEMI_SAMPLE_COUNT] = [
 ];
 
 const NEG_EDGE: f32 = -EDGE;
+const DIRECTIONAL_WEIGHT_RECIP: f32 = 1.0 / (1.0 + 4.0 * EDGE + 4.0 * CORNER);
 
 /// Global weather and atmosphere lighting resource matching `moonly-monolith` globals.
 #[derive(Resource, Debug, Clone, PartialEq, Reflect)]
@@ -240,27 +241,20 @@ impl HemisphereTracker {
     }
 
     fn refresh_targets(&mut self) {
-        let hemi_norm = directional_weight(Vec3::Y);
-        self.hemi_value = weighted_energy(Vec3::Y, &self.sample_energy) / hemi_norm;
-        for (face, target) in HEMI_CUBE_DIRS.iter().zip(self.hemi_cube.iter_mut()) {
-            *target = weighted_energy(*face, &self.sample_energy) / directional_weight(*face);
+        let mut pos = Vec3A::ZERO;
+        let mut neg = Vec3A::ZERO;
+        for (&sample, &energy) in HEMI_SAMPLE_DIRS.iter().zip(self.sample_energy.iter()) {
+            let dir = Vec3A::from(sample);
+            pos += dir.max(Vec3A::ZERO) * energy;
+            neg += (-dir).max(Vec3A::ZERO) * energy;
         }
+        let pos_norm = pos * DIRECTIONAL_WEIGHT_RECIP;
+        let neg_norm = neg * DIRECTIONAL_WEIGHT_RECIP;
+        self.hemi_value = pos_norm.y;
+        self.hemi_cube = [
+            pos_norm.x, pos_norm.y, pos_norm.z, neg_norm.x, neg_norm.y, neg_norm.z,
+        ];
     }
-}
-
-fn directional_weight(direction: Vec3) -> f32 {
-    HEMI_SAMPLE_DIRS
-        .iter()
-        .map(|sample| sample.dot(direction).max(0.0))
-        .sum()
-}
-
-fn weighted_energy(direction: Vec3, energies: &[f32; HEMI_SAMPLE_COUNT]) -> f32 {
-    HEMI_SAMPLE_DIRS
-        .iter()
-        .zip(energies.iter())
-        .map(|(sample, energy)| sample.dot(direction).max(0.0) * energy)
-        .sum()
 }
 
 /// Advance temporal smoothing for all trackers.
