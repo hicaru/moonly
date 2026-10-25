@@ -17,6 +17,7 @@ pub struct SmapRect {
 
 impl SmapRect {
     /// Construct a rectangle from inclusive bounds `(min_x, min_y)` to `(max_x, max_y)`.
+    #[inline]
     #[must_use]
     pub const fn new(min_x: u32, min_y: u32, max_x: u32, max_y: u32) -> Self {
         Self {
@@ -28,6 +29,7 @@ impl SmapRect {
     }
 
     /// Return the horizontal span (`b.x - a.x + 1`).
+    #[inline]
     #[must_use]
     pub const fn width(&self) -> u32 {
         if self.max_x >= self.min_x {
@@ -38,6 +40,7 @@ impl SmapRect {
     }
 
     /// Return the vertical span (`b.y - a.y + 1`).
+    #[inline]
     #[must_use]
     pub const fn height(&self) -> u32 {
         if self.max_y >= self.min_y {
@@ -48,6 +51,7 @@ impl SmapRect {
     }
 
     /// Check whether a square of `size` texels fits inside this free rectangle.
+    #[inline]
     #[must_use]
     pub const fn fits_square(&self, size: u32) -> bool {
         self.width() >= size && self.height() >= size
@@ -75,13 +79,6 @@ impl SmapRect {
             ),
         )
     }
-
-    const fn intersects(&self, other: &Self) -> bool {
-        self.max_x >= other.min_x
-            && self.max_y >= other.min_y
-            && self.min_x <= other.max_x
-            && self.min_y <= other.max_y
-    }
 }
 
 /// Shadow map atlas allocator ported from `SMAP_Allocator` (`SMAP_Allocator.h`).
@@ -101,14 +98,22 @@ pub struct SmapAllocator {
 
 impl SmapAllocator {
     /// Create and initialize an allocator with `pool_size` texels (`SMAP_Allocator::initialize`).
+    #[inline]
     #[must_use]
     pub fn new(pool_size: u32) -> Self {
-        let mut alloc = Self::default();
+        let mut alloc = Self {
+            pool_size: 0,
+            free_rects: Vec::with_capacity(64),
+            allocated: Vec::with_capacity(64),
+            failed_allocations: 0,
+            critical_points: Vec::with_capacity(64),
+        };
         alloc.initialize(pool_size);
         alloc
     }
 
     /// Reset the atlas to a single free square of `pool_size` texels (`initialize`).
+    #[inline]
     pub fn initialize(&mut self, pool_size: u32) {
         self.pool_size = pool_size;
         self.free_rects.clear();
@@ -122,33 +127,61 @@ impl SmapAllocator {
     }
 
     /// Reset atlas allocations for a new frame.
+    #[inline]
     pub fn begin_frame(&mut self, pool_size: u32) {
         self.initialize(pool_size);
     }
 
     /// Faithful critical-point insertion-order first-fit allocation (`SMAP_Allocator::push`).
+    #[expect(
+        unsafe_code,
+        reason = "Pointer loops are bounded by `critical_points.len()` and `allocated.len()`."
+    )]
+    #[inline]
     pub fn push_monolith(&mut self, size: u32) -> Option<SmapRect> {
         if size <= 4 || size > self.pool_size {
             return self.allocation_failed();
         }
-        if self.allocated.is_empty() {
+        let alloc_len = self.allocated.len();
+        if alloc_len == 0 {
             let rect = SmapRect::new(0, 0, size - 1, size - 1);
             self.add_monolith_rect(rect);
             return Some(rect);
         }
-        let mut point_index = 0;
-        while let Some(point) = self.critical_points.get(point_index).copied() {
-            let rect = SmapRect::new(
-                point.x as u32,
-                point.y as u32,
-                point.x as u32 + size - 1,
-                point.y as u32 + size - 1,
-            );
-            let overlaps = self.allocated.iter().any(|other| other.intersects(&rect));
-            if rect.max_x < self.pool_size && rect.max_y < self.pool_size && !overlaps {
-                self.critical_points.remove(point_index);
-                self.add_monolith_rect(rect);
-                return Some(rect);
+        let cp_len = self.critical_points.len();
+        let cp_ptr = self.critical_points.as_ptr();
+        let alloc_ptr = self.allocated.as_ptr();
+        let pool = self.pool_size;
+        let mut point_index = 0_usize;
+        while point_index < cp_len {
+            // SAFETY: `point_index < cp_len`.
+            let point = unsafe { *cp_ptr.add(point_index) };
+            let px = point.x as u32;
+            let py = point.y as u32;
+            let max_x = px + size - 1;
+            let max_y = py + size - 1;
+            if max_x < pool && max_y < pool {
+                let mut overlaps = false;
+                let mut j = 0_usize;
+                while j < alloc_len {
+                    // SAFETY: `j < alloc_len`.
+                    let other = unsafe { *alloc_ptr.add(j) };
+                    if max_x >= other.min_x
+                        && max_y >= other.min_y
+                        && px <= other.max_x
+                        && py <= other.max_y
+                    {
+                        overlaps = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !overlaps {
+                    self.critical_points.remove(point_index);
+                    let rect = SmapRect::new(px, py, max_x, max_y);
+                    self.add_monolith_rect(rect);
+                    return Some(rect);
+                }
             }
             point_index += 1;
         }
@@ -156,35 +189,48 @@ impl SmapAllocator {
     }
 
     /// Enhanced Moonly Best-Short-Side-Fit (`BSSF`) allocation that minimizes fragment waste.
+    #[expect(unsafe_code, reason = "Pointer loop is bounded by `free_rects.len()`.")]
+    #[inline]
     pub fn push_enhanced_bssf(&mut self, size: u32) -> Option<SmapRect> {
         if size == 0 || size > self.pool_size {
             return self.allocation_failed();
         }
-        let mut best_idx = None;
-        let mut best_short_side = u32::MAX;
-        let mut best_long_side = u32::MAX;
-        for (idx, rect) in self.free_rects.iter().enumerate() {
-            if !rect.fits_square(size) {
-                continue;
+        let free_len = self.free_rects.len();
+        let free_ptr = self.free_rects.as_ptr();
+        let mut best_idx = usize::MAX;
+        let mut best_score = u64::MAX;
+        let mut idx = 0_usize;
+        while idx < free_len {
+            // SAFETY: `idx < free_len`.
+            let rect = unsafe { *free_ptr.add(idx) };
+            let w = rect.max_x - rect.min_x + 1;
+            let h = rect.max_y - rect.min_y + 1;
+            if w >= size && h >= size {
+                let rem_w = w - size;
+                let rem_h = h - size;
+                let (short_side, long_side) = if rem_w <= rem_h {
+                    (rem_w, rem_h)
+                } else {
+                    (rem_h, rem_w)
+                };
+                let score = (u64::from(short_side) << 32) | u64::from(long_side);
+                if score == 0 {
+                    return Some(self.allocate_at_index(idx, size));
+                }
+                if score < best_score {
+                    best_score = score;
+                    best_idx = idx;
+                }
             }
-            let rem_w = rect.width() - size;
-            let rem_h = rect.height() - size;
-            let short_side = rem_w.min(rem_h);
-            let long_side = rem_w.max(rem_h);
-            if short_side < best_short_side
-                || (short_side == best_short_side && long_side < best_long_side)
-            {
-                best_short_side = short_side;
-                best_long_side = long_side;
-                best_idx = Some(idx);
-            }
+            idx += 1;
         }
-        let Some(index) = best_idx else {
+        if best_idx == usize::MAX {
             return self.allocation_failed();
-        };
-        Some(self.allocate_at_index(index, size))
+        }
+        Some(self.allocate_at_index(best_idx, size))
     }
 
+    #[inline]
     fn add_monolith_rect(&mut self, rect: SmapRect) {
         self.allocated.push(rect);
         let right = IVec2::new((rect.max_x + 1) as i32, rect.min_y as i32);
@@ -198,11 +244,13 @@ impl SmapAllocator {
         }
     }
 
+    #[inline]
     const fn allocation_failed(&mut self) -> Option<SmapRect> {
         self.failed_allocations += 1;
         None
     }
 
+    #[inline]
     fn allocate_at_index(&mut self, index: usize, size: u32) -> SmapRect {
         let free = self.free_rects.swap_remove(index);
         let result = SmapRect::new(
@@ -216,22 +264,23 @@ impl SmapAllocator {
         result
     }
 
+    #[inline]
     fn split_guillotine(&mut self, free: SmapRect, size: u32) {
-        let right_min_x = free.min_x + size;
-        if right_min_x <= free.max_x {
-            self.free_rects.push(SmapRect::new(
-                right_min_x,
-                free.min_y,
-                free.max_x,
-                free.max_y,
-            ));
-        }
         let bottom_min_y = free.min_y + size;
         if bottom_min_y <= free.max_y {
             self.free_rects.push(SmapRect::new(
                 free.min_x,
                 bottom_min_y,
                 free.min_x + size - 1,
+                free.max_y,
+            ));
+        }
+        let right_min_x = free.min_x + size;
+        if right_min_x <= free.max_x {
+            self.free_rects.push(SmapRect::new(
+                right_min_x,
+                free.min_y,
+                free.max_x,
                 free.max_y,
             ));
         }
