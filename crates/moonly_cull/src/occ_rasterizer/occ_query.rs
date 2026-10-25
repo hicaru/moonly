@@ -3,17 +3,27 @@ use super::{OCC_DIM_0, OCC_DIM_1, OCC_DIM_2, OCC_DIM_3, OccRasterizer, OccTestRe
 impl OccRasterizer {
     /// Faithful Moonly-Monolith hierarchical occlusion test (`occRasterizer::test`).
     /// Returns `-1` when fully occluded and `1` when at least one sample is visible.
+    #[inline]
     #[must_use]
     pub fn test_monolith(&self, rect: OccTestRect) -> i32 {
         let depth_i32 = df_2_s32(rect.depth);
         let x0 = rect.x0.min(OCC_DIM_0 - 1);
         let y0 = rect.y0.min(OCC_DIM_0 - 1);
+        if let Some(&d00) = self.buf_depth_0.get(y0 * OCC_DIM_0 + x0)
+            && depth_i32 < d00
+        {
+            return 1;
+        }
         let x1 = rect.x1.min(OCC_DIM_0 - 1).max(x0);
         let y1 = rect.y1.min(OCC_DIM_0 - 1).max(y0);
+        if let Some(&d11) = self.buf_depth_0.get(y1 * OCC_DIM_0 + x1)
+            && depth_i32 < d11
+        {
+            return 1;
+        }
         for my in (y0 >> 3)..=(y1 >> 3) {
             for mx in (x0 >> 3)..=(x1 >> 3) {
-                let res = self.test_cell_l3(mx, my, (x0, y0, x1, y1), depth_i32);
-                if res > 0 {
+                if self.test_cell_l3(mx, my, (x0, y0, x1, y1), depth_i32) > 0 {
                     return 1;
                 }
             }
@@ -21,6 +31,7 @@ impl OccRasterizer {
         -1
     }
 
+    #[inline]
     fn test_cell_l3(
         &self,
         mx: usize,
@@ -31,7 +42,7 @@ impl OccRasterizer {
         let Some(&cell_d) = self.buf_depth_3.get(my * OCC_DIM_3 + mx) else {
             return 1;
         };
-        if d > cell_d {
+        if d >= cell_d {
             return -1;
         }
         let (x0, y0, x1, y1) = bounds;
@@ -49,6 +60,7 @@ impl OccRasterizer {
         -1
     }
 
+    #[inline]
     fn test_cell_l2(
         &self,
         mx: usize,
@@ -59,7 +71,7 @@ impl OccRasterizer {
         let Some(&cell_d) = self.buf_depth_2.get(my * OCC_DIM_2 + mx) else {
             return 1;
         };
-        if d > cell_d {
+        if d >= cell_d {
             return -1;
         }
         let (x0, y0, x1, y1) = bounds;
@@ -77,6 +89,7 @@ impl OccRasterizer {
         -1
     }
 
+    #[inline]
     fn test_cell_l1(
         &self,
         mx: usize,
@@ -87,7 +100,7 @@ impl OccRasterizer {
         let Some(&cell_d) = self.buf_depth_1.get(my * OCC_DIM_1 + mx) else {
             return 1;
         };
-        if d > cell_d {
+        if d >= cell_d {
             return -1;
         }
         let (x0, y0, x1, y1) = bounds;
@@ -109,13 +122,24 @@ impl OccRasterizer {
     }
 
     /// Enhanced Moonly flat-pyramid occlusion test with coarse early rejection and slice scans.
+    #[inline]
     #[must_use]
     pub fn test_enhanced_fast(&self, rect: OccTestRect) -> i32 {
         let d = df_2_s32(rect.depth);
         let x0 = rect.x0.min(OCC_DIM_0 - 1);
         let y0 = rect.y0.min(OCC_DIM_0 - 1);
+        if let Some(&d00) = self.buf_depth_0.get(y0 * OCC_DIM_0 + x0)
+            && d < d00
+        {
+            return 1;
+        }
         let x1 = rect.x1.min(OCC_DIM_0 - 1).max(x0);
         let y1 = rect.y1.min(OCC_DIM_0 - 1).max(y0);
+        if let Some(&d11) = self.buf_depth_0.get(y1 * OCC_DIM_0 + x1)
+            && d < d11
+        {
+            return 1;
+        }
         if !any_cell_visible(
             &self.buf_depth_3,
             OCC_DIM_3,
@@ -140,6 +164,7 @@ impl OccRasterizer {
     }
 }
 
+#[inline]
 fn any_cell_visible(buf: &[i32], dim: usize, bounds: (usize, usize, usize, usize), d: i32) -> bool {
     let (x0, y0, x1, y1) = bounds;
     for y in y0..=y1 {
