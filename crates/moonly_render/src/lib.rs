@@ -6,11 +6,16 @@ mod bloom;
 pub mod camera;
 mod caster_visibility;
 mod combine;
+mod depth_copy;
 pub mod diagnostics;
 mod extraction;
+mod fog_camera;
+mod forward;
+mod froxel_pass;
 mod gpu_timer;
 mod graph;
 mod jitter;
+mod light_packages;
 mod light_volume;
 mod local_volumetrics;
 mod luminance;
@@ -28,6 +33,7 @@ mod post;
 mod projector;
 mod queue;
 mod reflected_lights;
+mod render_passes;
 mod shaders;
 mod shadow;
 mod shadow_bind_groups;
@@ -39,6 +45,7 @@ mod spot_pipeline;
 mod sun_accumulate;
 mod sun_shadow;
 mod surface;
+mod transmission;
 mod view_targets;
 mod visibility;
 mod volumetrics;
@@ -46,7 +53,7 @@ mod volumetrics;
 use bevy::{
     app::SubApp,
     asset::{embedded_asset, io::embedded::EmbeddedAssetRegistry},
-    pbr::{MeshPipeline, allocate_uniforms, early_gpu_preprocess, unpack_bins},
+    pbr::MeshPipeline,
     prelude::*,
     render::{
         ExtractSchedule, GpuResourceAppExt, Render, RenderApp, RenderDebugFlags, RenderStartup,
@@ -59,7 +66,7 @@ use bevy::{
     },
 };
 use moonly_post::{Hdr10PostConfig, LuminanceAdaptationState, MoonlyPostPlugin, OpticsMode};
-use moonly_volumetrics::{MoonlyVolumetricsPlugin, SunShaftsConfig};
+use moonly_volumetrics::{MoonlyFroxelConfig, MoonlyVolumetricsPlugin, SunShaftsConfig};
 
 pub use camera::{MoonlyCamera, MoonlyCameraRole, MoonlyDebugView, MoonlyLinearOutput};
 pub use caster_visibility::MoonlyCasterVisibility;
@@ -100,6 +107,7 @@ impl Plugin for MoonlyRenderPlugin {
                 (
                     mesh_bounds::collect_mesh_bounds,
                     surface::sync_moonly_surfaces,
+                    fog_camera::sync_fog_cameras,
                 ),
             )
             .add_plugins(ExtractResourcePlugin::<mesh_bounds::MoonlyMeshBounds>::default())
@@ -108,6 +116,7 @@ impl Plugin for MoonlyRenderPlugin {
             .add_plugins(ExtractResourcePlugin::<LuminanceAdaptationState>::default())
             .add_plugins(ExtractResourcePlugin::<OpticsMode>::default())
             .add_plugins(ExtractResourcePlugin::<SunShaftsConfig>::default())
+            .add_plugins(ExtractResourcePlugin::<MoonlyFroxelConfig>::default())
             .add_plugins(UniformComponentPlugin::<surface::MoonlySurfaceUniform>::default())
             .add_plugins(ExtractComponentPlugin::<surface::MoonlySurfaceUniform>::default())
             .add_plugins(ExtractComponentPlugin::<MoonlyCamera>::default())
@@ -133,9 +142,11 @@ impl Plugin for MoonlyRenderPlugin {
             embedded_asset!(app, "ao.wesl");
             embedded_asset!(app, "bloom.wesl");
             embedded_asset!(app, "combine.wesl");
+            embedded_asset!(app, "depth_copy.wesl");
             embedded_asset!(app, "post.wesl");
             embedded_asset!(app, "luminance.wesl");
             embedded_asset!(app, "volumetrics.wesl");
+            embedded_asset!(app, "froxel.wesl");
             embedded_asset!(app, "accum_spot.wesl");
             embedded_asset!(app, "accum_direct.wesl");
             embedded_asset!(app, "minmax.wesl");
@@ -153,29 +164,7 @@ impl Plugin for MoonlyRenderPlugin {
 fn configure_render_app(render_app: &mut SubApp) {
     render_app
         .add_schedule(graph::base_schedule())
-        .add_systems(
-            MoonlyRender,
-            (
-                allocate_uniforms,
-                unpack_bins,
-                early_gpu_preprocess,
-                shadow::render_spot_shadow,
-                sun_shadow::render_sun_shadow,
-                minmax::render_sun_minmax,
-                graph::render_gbuffer,
-                ao::render_ao,
-                occlusion::render_spot_accumulation,
-                local_volumetrics::render_local_volumetrics,
-                sun_accumulate::render_sun_accumulation,
-                volumetrics::render_volumetrics,
-                combine::render_combine,
-                luminance::render_luminance,
-                bloom::render_bloom,
-                post::render_post,
-                gpu_timer::resolve_gpu_timings,
-            )
-                .chain(),
-        )
+        .add_systems(MoonlyRender, render_passes::render_systems())
         .add_systems(
             ExtractSchedule,
             (
@@ -191,6 +180,9 @@ fn configure_render_app(render_app: &mut SubApp) {
                 ao::init_ao_pipeline,
                 bloom::init_bloom_pipeline,
                 combine::init_combine_pipeline,
+                depth_copy::init_depth_copy_pipeline,
+                froxel_pass::init_froxel_texture,
+                froxel_pass::init_froxel_pipeline,
                 post::init_post_pipeline,
                 luminance::init_luminance_pipeline,
                 volumetrics::init_volumetric_pipeline,
@@ -214,7 +206,11 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
         Render,
         (
             (
-                view_targets::prepare_view_targets,
+                light_packages::prepare_view_light_packages,
+                view_targets::prepare_view_targets
+                    .after(bevy::core_pipeline::core_3d::prepare_core_3d_depth_textures),
+                depth_copy::prepare_depth_copy_bind_groups,
+                transmission::prepare_transmission_textures,
                 luminance::prepare_luminance_targets,
                 shadow_targets::prepare_spot_shadow_targets,
                 minmax::prepare_minmax_bind_groups,
@@ -223,6 +219,7 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                 occlusion::prepare_occlusion,
                 sun_accumulate::prepare_sun_bind_groups,
                 volumetrics::prepare_volumetric_bind_groups,
+                froxel_pass::prepare_froxel_bind_groups,
                 combine::prepare_combine_bind_groups,
                 combine::prepare_combine_pipelines,
                 post::prepare_post_bind_groups,

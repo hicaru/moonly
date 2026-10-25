@@ -26,6 +26,7 @@ pub(crate) struct MoonlyViewTargets {
     pub scene: ColorAttachment,
     pub volumetrics: ColorAttachment,
     pub local_volumetrics: ColorAttachment,
+    pub froxel: ColorAttachment,
     pub bloom: [ColorAttachment; 3],
     pub ao: ColorAttachment,
     pub depth: DepthStencilAttachment,
@@ -68,6 +69,16 @@ fn create_targets(
         (size / 8).max(UVec2::ONE),
         "moonly_local_volumetrics",
     );
+    let froxel_texture = cache.get(
+        device,
+        texture_descriptor((size / 4).max(UVec2::ONE), GBUFFER_FORMAT, "moonly_froxel"),
+    );
+    let froxel = ColorAttachment::new(
+        froxel_texture,
+        None,
+        None,
+        Some(LinearRgba::new(0.0, 0.0, 0.0, 1.0).into()),
+    );
     let bloom = [2, 4, 8].map(|scale| {
         color_target(
             device,
@@ -94,6 +105,7 @@ fn create_targets(
         scene,
         volumetrics,
         local_volumetrics,
+        froxel,
         bloom,
         ao,
         depth,

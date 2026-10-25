@@ -89,6 +89,10 @@ pub struct MoonlyLight {
     pub range: f32,
     /// Outer spot cone angle in radians (`cone` in `R_light`).
     pub cone_angle: f32,
+    /// Inner spot cone angle. A negative value selects the reference smooth edge.
+    pub inner_cone_angle: f32,
+    /// View layer bitmask with four 64-layer words.
+    pub render_layers: [u64; 4],
     /// Explicit shadow map resolution override (`0` uses automatic SSA sizing).
     pub smap_size_override: u16,
     /// Stable source entity for cache and render identity.
@@ -112,6 +116,8 @@ impl Default for MoonlyLight {
             right: Vec3::X,
             range: 12.0,
             cone_angle: std::f32::consts::FRAC_PI_3,
+            inner_cone_angle: -1.0,
+            render_layers: [1, 0, 0, 0],
             smap_size_override: 0,
             source_entity: None,
             omnipart_parent: None,
@@ -258,21 +264,4 @@ const fn omnipart_axes() -> [(Vec3, Vec3); 6] {
         (Vec3::Z, Vec3::NEG_X),
         (Vec3::NEG_Z, Vec3::X),
     ]
-}
-
-/// Synchronize `GlobalTransform` into `MoonlyLight` and populate the frame `LightPackage`.
-pub fn collect_light_packages(
-    mut package: ResMut<LightPackage>,
-    mut query: Query<(Entity, &mut MoonlyLight, Option<&GlobalTransform>)>,
-) {
-    package.clear();
-    for (entity, mut light, transform) in &mut query {
-        light.source_entity = Some(entity);
-        if let Some(xf) = transform {
-            light.position = xf.translation();
-            light.direction = xf.forward().as_vec3();
-            light.right = xf.right().as_vec3();
-        }
-        package.push(light.clone());
-    }
 }

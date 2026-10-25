@@ -18,6 +18,7 @@ use bevy::{
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         texture::{ColorAttachment, TextureCache},
+        view::ViewTarget,
     },
 };
 
@@ -26,7 +27,6 @@ use crate::{
     luminance_readback::{
         LuminanceReadback, LuminanceResultSender, create_readback, schedule_readback,
     },
-    view_targets::MoonlyViewTargets,
 };
 
 const LUMINANCE_SIZES: [u32; 4] = [256, 64, 8, 1];
@@ -146,24 +146,22 @@ pub(crate) struct LuminancePrepareInputs<'w> {
 pub(crate) fn prepare_luminance_bind_groups(
     mut commands: Commands,
     inputs: LuminancePrepareInputs,
-    views: Query<(Entity, &MoonlyViewTargets, &ViewLuminanceTargets), With<MoonlyCamera>>,
+    views: Query<(Entity, &ViewTarget, &ViewLuminanceTargets), With<MoonlyCamera>>,
 ) {
     for (entity, scene, luminance) in &views {
         let groups = [0_usize, 1, 2, 3].map(|stage| {
             let source_size = if stage == 0 {
-                scene.scene.texture.texture.size()
+                scene.main_texture().size()
             } else {
                 luminance_target_size(stage - 1)
             };
             let source = if stage == 0 {
-                &scene.scene.texture.default_view
+                scene.main_texture_view()
             } else {
-                luminance
-                    .targets
-                    .get(stage - 1)
-                    .map_or(&scene.scene.texture.default_view, |target| {
-                        &target.texture.default_view
-                    })
+                luminance.targets.get(stage - 1).map_or_else(
+                    || scene.main_texture_view(),
+                    |target| &target.texture.default_view,
+                )
             };
             create_luminance_bind_group(&inputs, source, source_size, stage)
         });

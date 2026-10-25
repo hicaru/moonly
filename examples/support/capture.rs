@@ -6,11 +6,15 @@ use bevy::{
     render::view::screenshot::{Screenshot, ScreenshotCaptured},
 };
 
+#[derive(Debug, Clone)]
+pub(crate) struct OffscreenCapture(pub(crate) Handle<Image>);
+
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct CaptureOptions {
     pub(crate) screenshot_frame: Option<u32>,
     pub(crate) screenshot_path: PathBuf,
     pub(crate) exit_frame: Option<u32>,
+    pub(crate) offscreen: Option<OffscreenCapture>,
 }
 
 impl CaptureOptions {
@@ -20,6 +24,7 @@ impl CaptureOptions {
             screenshot_frame: None,
             screenshot_path: PathBuf::from(default_path),
             exit_frame: None,
+            offscreen: None,
         };
         let mut index = 1_usize;
         while let Some(arg) = args.get(index) {
@@ -61,16 +66,22 @@ pub(crate) fn capture_system(
         return;
     }
     if options.screenshot_frame == Some(*frame) {
-        spawn_screenshot(&mut commands, &options.screenshot_path);
+        spawn_screenshot(&mut commands, &options);
     }
     if options.exit_frame.is_some_and(|limit| *frame >= limit) {
         finish_capture(&options, &state, *frame, &mut exit);
     }
 }
 
-fn spawn_screenshot(commands: &mut Commands, path: &Path) {
-    let path = path.to_path_buf();
-    commands.spawn(Screenshot::primary_window()).observe(
+fn spawn_screenshot(commands: &mut Commands, options: &CaptureOptions) {
+    let path = options.screenshot_path.clone();
+    let screenshot = options
+        .offscreen
+        .as_ref()
+        .map_or_else(Screenshot::primary_window, |target| {
+            Screenshot::image(target.0.clone())
+        });
+    commands.spawn(screenshot).observe(
         move |captured: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
             match save_and_validate(&captured.image, &path) {
                 Ok(report) => {

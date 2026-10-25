@@ -179,7 +179,6 @@ pub(crate) struct SunPrepareInputs<'w> {
     queue: Res<'w, RenderQueue>,
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlySunPipeline>,
-    package: Res<'w, LightPackage>,
     cascades: Res<'w, moonly_core::MoonlySunPackage>,
     lut: Res<'w, MoonlyMaterialLutTexture>,
     fallback: Res<'w, MoonlyFallbackProjector>,
@@ -195,12 +194,14 @@ pub(crate) fn prepare_sun_bind_groups(
             &ExtractedView,
             &MoonlyViewTargets,
             &MoonlySpotShadowTarget,
+            &crate::light_packages::MoonlyViewLightPackage,
         ),
         With<MoonlyCamera>,
     >,
 ) {
-    for (entity, view, targets, shadow) in &views {
-        let Some(bind_group) = create_sun_bind_group(&inputs, view, targets, shadow) else {
+    for (entity, view, targets, shadow, package) in &views {
+        let Some(bind_group) = create_sun_bind_group(&inputs, view, targets, shadow, &package.0)
+        else {
             commands.entity(entity).remove::<MoonlySunBindGroup>();
             continue;
         };
@@ -215,8 +216,9 @@ fn create_sun_bind_group(
     view: &ExtractedView,
     targets: &MoonlyViewTargets,
     shadow: &MoonlySpotShadowTarget,
+    package: &LightPackage,
 ) -> Option<BindGroup> {
-    let light = inputs.package.v_direct.first()?;
+    let light = package.v_direct.first()?;
     let near = shadow.sun_batches.first()?;
     let middle = shadow.sun_batches.get(1)?;
     let far = shadow.sun_batches.get(2)?;

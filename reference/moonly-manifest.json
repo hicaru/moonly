@@ -25,6 +25,18 @@
         "pixel_probe": { "x": 650, "y": 300, "rgb": [249, 175, 89], "tolerance": 2 }
       },
       {
+        "name": "native_spot",
+        "reference": "reference/native-light.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [202, 106, 43], "tolerance": 2 }
+      },
+      {
+        "name": "glow",
+        "reference": "reference/glow.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [255, 215, 132], "tolerance": 2 }
+      },
+      {
         "name": "point_shadow",
         "reference": "reference/point-shadow.png",
         "mae_tolerance": 1.0,
@@ -35,6 +47,24 @@
         "reference": "reference/alpha-caster.png",
         "mae_tolerance": 1.0,
         "pixel_probe": { "x": 550, "y": 300, "rgb": [222, 129, 56], "tolerance": 2 }
+      },
+      {
+        "name": "transparent",
+        "reference": "reference/transparent.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 400, "y": 400, "rgb": [93, 154, 193], "tolerance": 2 }
+      },
+      {
+        "name": "fog_transparent",
+        "reference": "reference/fog-transparent.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 400, "y": 400, "rgb": [112, 159, 193], "tolerance": 2 }
+      },
+      {
+        "name": "transmissive",
+        "reference": "reference/transmissive.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 400, "y": 400, "rgb": [89, 112, 104], "tolerance": 2 }
       },
       {
         "name": "sun_cascades",
@@ -64,7 +94,19 @@
         "name": "overlay",
         "reference": "reference/overlay.png",
         "mae_tolerance": 1.0,
-        "pixel_probe": { "x": 490, "y": 375, "rgb": [222, 153, 78], "tolerance": 2 }
+        "pixel_probe": { "x": 490, "y": 375, "rgb": [220, 143, 61], "tolerance": 2 }
+      },
+      {
+        "name": "fog",
+        "reference": "reference/fog.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 800, "y": 550, "rgb": [123, 128, 110], "tolerance": 2 }
+      },
+      {
+        "name": "froxel",
+        "reference": "reference/froxel.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 800, "y": 550, "rgb": [159, 161, 134], "tolerance": 2 }
       },
       {
         "name": "wet_environment",

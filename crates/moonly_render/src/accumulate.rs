@@ -100,7 +100,11 @@ impl MoonlySpotUniform {
                 light.volumetric.intensity,
                 light.volumetric.distance,
                 light.volumetric.quality,
-                0.0,
+                if light.inner_cone_angle >= 0.0 {
+                    (light.inner_cone_angle * 0.5).cos()
+                } else {
+                    -1.0
+                },
             ),
             screen_size: lowres_size.extend(0.0).extend(0.0),
         }
@@ -129,7 +133,6 @@ pub(crate) struct SpotPrepareInputs<'w> {
     queue: Res<'w, RenderQueue>,
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlySpotPipeline>,
-    package: Res<'w, LightPackage>,
     virtual_lights: Res<'w, VirtualGiLightPackage>,
     lut: Res<'w, MoonlyMaterialLutTexture>,
     images: Res<'w, RenderAssets<GpuImage>>,
@@ -142,6 +145,7 @@ struct SpotViewContext<'a, 'w> {
     view: &'a ExtractedView,
     targets: &'a MoonlyViewTargets,
     shadow: &'a MoonlySpotShadowTarget,
+    package: &'a LightPackage,
 }
 
 type MoonlySpotViewQuery<'w, 's> = Query<
@@ -152,6 +156,7 @@ type MoonlySpotViewQuery<'w, 's> = Query<
         &'static ExtractedView,
         &'static MoonlyViewTargets,
         &'static MoonlySpotShadowTarget,
+        &'static crate::light_packages::MoonlyViewLightPackage,
         Option<&'static mut MoonlySpotBindGroups>,
     ),
     With<MoonlyCamera>,
@@ -163,12 +168,13 @@ pub(crate) fn prepare_spot_bind_groups(
     mut views: MoonlySpotViewQuery,
     projectors: Query<(&MainEntity, &MoonlyProjector)>,
 ) {
-    for (entity, view, targets, shadow, existing) in &mut views {
+    for (entity, view, targets, shadow, package, existing) in &mut views {
         let context = SpotViewContext {
             inputs: &inputs,
             view,
             targets,
             shadow,
+            package: &package.0,
         };
         if let Some(mut existing) = existing {
             fill_spot_groups(&context, &projectors, &mut existing.0);
@@ -186,7 +192,7 @@ fn fill_spot_groups(
     groups: &mut Vec<MoonlySpotBindGroup>,
 ) {
     groups.clear();
-    let package = &context.inputs.package;
+    let package = context.package;
     let unshadowed = package.v_point.iter().chain(package.v_spot.iter());
     for light in unshadowed.chain(&package.v_shadowed) {
         if !crate::visibility::light_visible(light, context.view) {

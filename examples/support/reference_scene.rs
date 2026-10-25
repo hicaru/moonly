@@ -1,5 +1,6 @@
 use bevy::{
     camera::visibility::RenderLayers,
+    pbr::DistanceFog,
     prelude::*,
     render::{
         camera::CameraRenderGraph,
@@ -75,7 +76,7 @@ pub(crate) fn spawn_scene(
         emissive: LinearRgba::new(0.8, 0.25, 0.05, 1.0),
         ..Default::default()
     });
-    commands.spawn((
+    let mut emissive_entity = commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
         MeshMaterial3d(emissive),
         Transform::from_xyz(-2.0, 0.25, 0.5),
@@ -85,6 +86,9 @@ pub(crate) fn spawn_scene(
             RenderLayers::default()
         },
     ));
+    if std::env::args().any(|arg| arg == "--glow") {
+        emissive_entity.insert(super::native_reference::glow_component());
+    }
     let blocker = materials.add(blocker_material(&mut images));
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.4, 2.4, 0.3))),
@@ -92,6 +96,7 @@ pub(crate) fn spawn_scene(
         Transform::from_xyz(-0.9, 1.2, 1.35),
         ReferenceCaster,
     ));
+    super::native_reference::spawn_transparent(&mut commands, &mut meshes, &mut materials);
     spawn_reference_light(&mut commands, &mut images);
     let mut camera = commands.spawn((
         MoonlyCamera::default(),
@@ -101,6 +106,9 @@ pub(crate) fn spawn_scene(
     ));
     if std::env::args().any(|arg| arg == "--linear") {
         camera.insert(MoonlyLinearOutput);
+    }
+    if std::env::args().any(|arg| arg == "--fog" || arg == "--fog-transparent") {
+        camera.insert(DistanceFog::default());
     }
     spawn_overlay_camera(&mut commands);
 }
@@ -169,6 +177,13 @@ pub(crate) fn move_cascade_camera(
 }
 
 fn spawn_reference_light(commands: &mut Commands, images: &mut Assets<Image>) {
+    if std::env::args().any(|arg| arg == "--glow") {
+        return;
+    }
+    if std::env::args().any(|arg| arg == "--native-light") {
+        super::native_reference::spawn_native_spot(commands);
+        return;
+    }
     let mut light = MoonlyLight::spot(
         Vec3::new(-2.0, 5.0, 3.0),
         Vec3::new(0.3, -1.0, -0.4),
@@ -199,37 +214,8 @@ fn spawn_reference_light(commands: &mut Commands, images: &mut Assets<Image>) {
     if let Some(projector) = projector {
         entity.insert(projector);
     }
-    spawn_sun(commands);
+    super::native_reference::spawn_sun(commands);
     spawn_additional_spots(commands);
-}
-
-fn spawn_sun(commands: &mut Commands) {
-    if !std::env::args()
-        .any(|arg| arg == "--sun" || arg == "--screen-shafts" || arg == "--cascade-motion")
-    {
-        return;
-    }
-    let screen_shafts = std::env::args().any(|arg| arg == "--screen-shafts");
-    let direction = if screen_shafts {
-        Vec3::new(0.65, -0.12, 0.75)
-    } else {
-        Vec3::new(0.4, -1.0, 0.2)
-    };
-    let target = if screen_shafts {
-        Vec3::new(0.0, 10.0, 0.0) + direction
-    } else {
-        Vec3::new(4.0, 0.0, 2.0)
-    };
-    commands.spawn((
-        MoonlyLight {
-            light_type: MoonlyLightType::Direct,
-            flags: MoonlyLightFlags::SHADOW,
-            color: Vec3::new(2.0, 1.8, 1.5),
-            direction,
-            ..MoonlyLight::default()
-        },
-        Transform::from_xyz(0.0, 10.0, 0.0).looking_at(target, Vec3::Y),
-    ));
 }
 
 fn spawn_additional_spots(commands: &mut Commands) {

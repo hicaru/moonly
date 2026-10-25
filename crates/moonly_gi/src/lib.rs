@@ -9,9 +9,13 @@ mod gi_intersection;
 mod gi_ray;
 mod gi_sampling;
 mod gi_system;
+mod glow;
 mod light_tracking;
 
-use bevy::{asset::embedded_asset, prelude::*};
+use bevy::{
+    asset::{AssetEvent, embedded_asset},
+    prelude::*,
+};
 use moonly_core::{MoonlySystemSet, VirtualGiLightPackage};
 
 use crate::gi_geometry::collect_static_gi_geometry;
@@ -29,6 +33,7 @@ pub use crate::{
     gi_cache::GiLightCache,
     gi_geometry::{MoonlyGiCaster, StaticGiGeometry},
     gi_ray::{GiRayGeometry, GiRayHit, GiRayQuery},
+    glow::{MoonlyGlow, MoonlyGlowCache},
 };
 
 /// Raw WESL source for `gi.wesl`.
@@ -43,15 +48,22 @@ impl Plugin for MoonlyGiPlugin {
         if app.is_plugin_added::<AssetPlugin>() {
             embedded_asset!(app, "gi.wesl");
         }
+        app.add_message::<AssetEvent<Mesh>>();
         app.register_type::<GiReflectorBox>()
             .register_type::<MoonlyGiCaster>()
+            .register_type::<MoonlyGlow>()
             .register_type::<GiLightField>()
             .register_type::<AmbientOcclusionSettings>()
             .init_resource::<GiLightField>()
             .init_resource::<VirtualGiLightPackage>()
             .init_resource::<GiLightCache>()
+            .init_resource::<MoonlyGlowCache>()
             .init_resource::<StaticGiGeometry>()
             .init_resource::<AmbientOcclusionSettings>()
+            .add_systems(
+                PostUpdate,
+                glow::sync_mesh_emitters.before(MoonlySystemSet::CollectLights),
+            )
             .add_systems(
                 PostUpdate,
                 (

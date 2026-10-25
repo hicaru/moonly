@@ -1,9 +1,11 @@
 //! Volumetric sunshafts, spot cones, and Mie scattering for Moonly.
 
+pub mod froxel;
 pub mod sunshafts;
 
 use bevy::{asset::embedded_asset, prelude::*};
 
+pub use crate::froxel::{FROXEL_GRID_SIZE, MoonlyFroxelConfig};
 pub use crate::sunshafts::{
     SunShaftsConfig, SunShaftsMode, VOLUMETRIC_JITTER_TILE, evaluate_volumetric_sunshaft,
     henyey_greenstein_phase,
@@ -23,6 +25,8 @@ impl Plugin for MoonlyVolumetricsPlugin {
         }
         app.register_type::<SunShaftsMode>()
             .register_type::<SunShaftsConfig>()
+            .register_type::<MoonlyFroxelConfig>()
+            .init_resource::<MoonlyFroxelConfig>()
             .init_resource::<SunShaftsConfig>();
     }
 }

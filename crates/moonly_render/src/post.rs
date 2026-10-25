@@ -157,9 +157,17 @@ pub(crate) struct PostPrepareInputs<'w> {
 pub(crate) fn prepare_post_bind_groups(
     mut commands: Commands,
     inputs: PostPrepareInputs,
-    views: Query<(Entity, &MoonlyViewTargets, Option<&MoonlyLinearOutput>), With<MoonlyCamera>>,
+    views: Query<
+        (
+            Entity,
+            &MoonlyViewTargets,
+            &ViewTarget,
+            Option<&MoonlyLinearOutput>,
+        ),
+        With<MoonlyCamera>,
+    >,
 ) {
-    for (entity, targets, linear) in &views {
+    for (entity, targets, target, linear) in &views {
         let uniform = MoonlyPostUniform::new(
             &inputs.config,
             &inputs.adaptation,
@@ -173,7 +181,7 @@ pub(crate) fn prepare_post_bind_groups(
             Some("moonly_post_bind_group"),
             &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),
             &BindGroupEntries::sequential((
-                &targets.scene.texture.default_view,
+                target.main_texture_view(),
                 &bloom.texture.default_view,
                 &uniform,
             )),

@@ -8,6 +8,7 @@
 @group(0) @binding(7) var ao_texture: texture_2d<f32>;
 @group(0) @binding(8) var volumetric_texture: texture_2d<f32>;
 @group(0) @binding(9) var local_volumetric_texture: texture_2d<f32>;
+@group(0) @binding(10) var froxel_texture: texture_2d<f32>;
 
 struct MoonlyEnvironmentUniform {
     ambient: vec4<f32>,
@@ -15,6 +16,8 @@ struct MoonlyEnvironmentUniform {
     fog_color: vec4<f32>,
     fog_plane: vec4<f32>,
     ao: vec4<f32>,
+    view_position: vec4<f32>,
+    fog_params: vec4<f32>,
 };
 
 const MOONLY_HEMI_SCALE: f32 = 0.75;
@@ -57,6 +60,12 @@ fn local_volume(uv: vec2<f32>, world_position: vec3<f32>) -> vec3<f32> {
     return color / max(weight_sum, 0.0001);
 }
 
+fn apply_froxel(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+    let dimensions = vec2<f32>(textureDimensions(froxel_texture));
+    let sample = textureLoad(froxel_texture, vec2<i32>(uv * dimensions), 0);
+    return color * sample.a + sample.rgb;
+}
+
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dimensions = vec2<f32>(textureDimensions(position_texture));
@@ -71,7 +80,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             vec2<i32>(in.uv * vec2<f32>(textureDimensions(local_volumetric_texture))),
             0,
         ).rgb;
-        return vec4(textureLoad(volumetric_texture, pixel, 0).rgb + local, 1.0);
+        let color = textureLoad(volumetric_texture, pixel, 0).rgb + local;
+        return vec4(apply_froxel(color, in.uv), 1.0);
     }
     if constants::MOONLY_DEBUG_VIEW == 1u {
         return vec4(position.xyz, 1.0);
@@ -112,9 +122,14 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let ambient = environment.ambient.rgb + environment.hemi.rgb * environment.hemi.w * MOONLY_HEMI_SCALE;
     let global_light = albedo_gloss.rgb * ambient * ao + accumulator.rgb;
     let tracked_light = accumulator.rgb * ao;
-    let color = select(global_light, tracked_light, accumulator.w > 1.5)
+    let direct_color = select(global_light, tracked_light, accumulator.w > 1.5)
         + textureLoad(volumetric_texture, pixel, 0).rgb
         + local_volume(in.uv, position.xyz);
-    let fog = clamp(dot(vec4(position.xyz, 1.0), environment.fog_plane), 0.0, 1.0);
+    let color = apply_froxel(direct_color, in.uv);
+    let distance_fog = clamp(dot(vec4(position.xyz, 1.0), environment.fog_plane), 0.0, 1.0);
+    let height = exp(-environment.fog_params.y * (position.y - environment.fog_params.z));
+    let optical_depth = environment.fog_params.x * distance(position.xyz, environment.view_position.xyz) * height;
+    let density_fog = 1.0 - exp(-optical_depth);
+    let fog = max(distance_fog, density_fog);
     return vec4(mix(color, environment.fog_color.rgb, fog), 1.0);
 }

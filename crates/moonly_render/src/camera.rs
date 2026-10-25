@@ -1,10 +1,11 @@
 use bevy::{
     camera::Hdr,
     ecs::query::QueryItem,
+    pbr::ScreenSpaceTransmission,
     prelude::*,
     render::{
         RenderApp, camera::CameraRenderGraph, extract_component::ExtractComponent,
-        sync_component::SyncComponent,
+        sync_component::SyncComponent, view::NoIndirectDrawing,
     },
 };
 
@@ -28,6 +29,8 @@ pub enum MoonlyCameraRole {
     Hdr,
     CameraRenderGraph = CameraRenderGraph::new(MoonlyRender),
     Msaa = Msaa::Off,
+    NoIndirectDrawing,
+    ScreenSpaceTransmission,
     MoonlyDebugView
 )]
 pub struct MoonlyCamera {

@@ -56,11 +56,13 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     }
     let light_direction = to_light / distance_to_light;
     let cone_cos = dot(-light_direction, normalize(spot.direction_cos.xyz));
-    let spot_cone = smoothstep(
+    let reference_cone = smoothstep(
         spot.direction_cos.w,
         min(spot.direction_cos.w + 0.15, 1.0),
         cone_cos,
     );
+    let native_cone = smoothstep(spot.volumetric.w, spot.direction_cos.w, cone_cos);
+    let spot_cone = select(reference_cone, native_cone, spot.volumetric.w >= 0.0);
     let cone = select(spot_cone, 1.0, spot.direction_cos.w < -0.999);
     if cone <= 0.0 {
         return vec4(0.0);

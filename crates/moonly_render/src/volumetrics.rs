@@ -100,7 +100,6 @@ pub(crate) struct VolumetricPrepareInputs<'w> {
     queue: Res<'w, RenderQueue>,
     cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyVolumetricPipeline>,
-    package: Res<'w, LightPackage>,
     cascades: Res<'w, MoonlySunPackage>,
     config: Res<'w, SunShaftsConfig>,
 }
@@ -114,12 +113,14 @@ pub(crate) fn prepare_volumetric_bind_groups(
             &ExtractedView,
             &MoonlyViewTargets,
             &MoonlySpotShadowTarget,
+            &crate::light_packages::MoonlyViewLightPackage,
         ),
         With<MoonlyCamera>,
     >,
 ) {
-    for (entity, view, targets, shadow) in &views {
-        let Some(group) = create_volumetric_bind_group(&inputs, view, targets, shadow) else {
+    for (entity, view, targets, shadow, package) in &views {
+        let Some(group) = create_volumetric_bind_group(&inputs, view, targets, shadow, &package.0)
+        else {
             commands.entity(entity).remove::<ViewVolumetricBindGroup>();
             continue;
         };
@@ -134,11 +135,12 @@ fn create_volumetric_bind_group(
     view: &ExtractedView,
     targets: &MoonlyViewTargets,
     shadow: &MoonlySpotShadowTarget,
+    package: &LightPackage,
 ) -> Option<BindGroup> {
     if matches!(inputs.config.mode, SunShaftsMode::Off) {
         return None;
     }
-    let light = inputs.package.v_direct.first()?;
+    let light = package.v_direct.first()?;
     let near = shadow.sun_batches.first()?;
     let middle = shadow.sun_batches.get(1)?;
     let far = shadow.sun_batches.get(2)?;

@@ -35,6 +35,28 @@ const SCENES: &[Scene] = &[
         },
     },
     Scene {
+        name: "native_spot",
+        argument: Some("--native-light"),
+        reference: "reference/native-light.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 650,
+            y: 300,
+            expected: [202, 106, 43],
+        },
+    },
+    Scene {
+        name: "glow",
+        argument: Some("--glow"),
+        reference: "reference/glow.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 650,
+            y: 300,
+            expected: [255, 215, 132],
+        },
+    },
+    Scene {
         name: "point_shadow",
         argument: Some("--point-shadow"),
         reference: "reference/point-shadow.png",
@@ -54,6 +76,39 @@ const SCENES: &[Scene] = &[
             x: 550,
             y: 300,
             expected: [222, 129, 56],
+        },
+    },
+    Scene {
+        name: "transparent",
+        argument: Some("--transparent"),
+        reference: "reference/transparent.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 400,
+            y: 400,
+            expected: [93, 154, 193],
+        },
+    },
+    Scene {
+        name: "fog_transparent",
+        argument: Some("--fog-transparent"),
+        reference: "reference/fog-transparent.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 400,
+            y: 400,
+            expected: [112, 159, 193],
+        },
+    },
+    Scene {
+        name: "transmissive",
+        argument: Some("--transmissive"),
+        reference: "reference/transmissive.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 400,
+            y: 400,
+            expected: [89, 112, 104],
         },
     },
     Scene {
@@ -108,7 +163,29 @@ const SCENES: &[Scene] = &[
         probe: PixelProbe {
             x: 490,
             y: 375,
-            expected: [222, 153, 78],
+            expected: [220, 143, 61],
+        },
+    },
+    Scene {
+        name: "fog",
+        argument: Some("--fog"),
+        reference: "reference/fog.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 800,
+            y: 550,
+            expected: [123, 128, 110],
+        },
+    },
+    Scene {
+        name: "froxel",
+        argument: Some("--froxel"),
+        reference: "reference/froxel.png",
+        tolerance: 1.0,
+        probe: PixelProbe {
+            x: 800,
+            y: 550,
+            expected: [159, 161, 134],
         },
     },
     Scene {
@@ -183,7 +260,7 @@ fn run_capture(scene: &Scene, candidate: &Path) -> Result<(), String> {
         "45",
     ]);
     command.arg(candidate);
-    command.args(["--exit-after", "60"]);
+    command.args(["--offscreen", "--exit-after", "60"]);
     if let Some(argument) = scene.argument {
         command.arg(argument);
     }

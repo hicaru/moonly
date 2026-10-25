@@ -15,6 +15,7 @@ use bevy::{
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         texture::ColorAttachment,
+        view::ViewTarget,
     },
     shader::Shader,
 };
@@ -127,13 +128,23 @@ pub(crate) struct BloomPrepareInputs<'w> {
 pub(crate) fn prepare_bloom_bind_groups(
     mut commands: Commands,
     inputs: BloomPrepareInputs,
-    views: Query<(Entity, &MoonlyViewTargets), With<MoonlyCamera>>,
+    views: Query<(Entity, &MoonlyViewTargets, &ViewTarget), With<MoonlyCamera>>,
 ) {
-    for (entity, targets) in &views {
+    for (entity, targets, view) in &views {
         let groups = [0_usize, 1, 2, 3, 4].map(|stage| {
             let source = bloom_source(targets, stage);
+            let source_size = if stage == 0 {
+                view.main_texture().size()
+            } else {
+                source.texture.texture.size()
+            };
+            let source_view = if stage == 0 {
+                view.main_texture_view()
+            } else {
+                &source.texture.default_view
+            };
             let target = bloom_target(targets, stage);
-            create_bloom_bind_group(&inputs, source, target, stage)
+            create_bloom_bind_group(&inputs, source_view, source_size, target, stage)
         });
         commands.entity(entity).insert(ViewBloomBindGroups(groups));
     }
@@ -154,11 +165,11 @@ fn bloom_target(targets: &MoonlyViewTargets, stage: usize) -> &ColorAttachment {
 
 fn create_bloom_bind_group(
     inputs: &BloomPrepareInputs,
-    source: &ColorAttachment,
+    source: &bevy::render::render_resource::TextureView,
+    input: bevy::render::render_resource::Extent3d,
     target: &ColorAttachment,
     stage: usize,
 ) -> BindGroup {
-    let input = source.texture.texture.size();
     let output = target.texture.texture.size();
     let uniform = MoonlyBloomUniform {
         input_size: Vec2::new(input.width as f32, input.height as f32),
@@ -170,7 +181,7 @@ fn create_bloom_bind_group(
     inputs.device.create_bind_group(
         Some("moonly_bloom_bind_group"),
         &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),
-        &BindGroupEntries::sequential((&source.texture.default_view, &uniform)),
+        &BindGroupEntries::sequential((source, &uniform)),
     )
 }
 

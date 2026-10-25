@@ -1,5 +1,6 @@
 pub(crate) mod benchmark;
 pub(crate) mod capture;
+pub(crate) mod native_reference;
 pub(crate) mod reference;
 pub(crate) mod reference_scene;
 pub(crate) mod scene;

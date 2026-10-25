@@ -15,7 +15,7 @@ use bevy::{
             binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
-        view::ExtractedView,
+        view::{ExtractedView, ViewTarget},
     },
     shader::{Shader, ShaderDefVal},
 };
@@ -56,6 +56,8 @@ struct MoonlyEnvironmentUniform {
     fog_color: Vec4,
     fog_plane: Vec4,
     ao: Vec4,
+    view_position: Vec4,
+    fog_params: Vec4,
 }
 
 impl MoonlyEnvironmentUniform {
@@ -64,6 +66,7 @@ impl MoonlyEnvironmentUniform {
         clip_from_world: Mat4,
         config: &MoonlyConfig,
         settings: &AmbientOcclusionSettings,
+        view_position: Vec3,
     ) -> Self {
         let mode = match config.ao_mode {
             AmbientOcclusionMode::Off => 0.0,
@@ -78,6 +81,13 @@ impl MoonlyEnvironmentUniform {
             fog_color: environment.fog_color.extend(1.0),
             fog_plane: environment.fog_plane_for_view(clip_from_world),
             ao: Vec4::new(mode, settings.ssdo_bounce_strength, 0.0, 0.0),
+            view_position: view_position.extend(1.0),
+            fog_params: Vec4::new(
+                environment.fog_density,
+                environment.fog_height_falloff,
+                environment.fog_height_reference,
+                0.0,
+            ),
         }
     }
 }
@@ -110,6 +120,7 @@ pub(crate) fn init_combine_pipeline(
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Depth),
                 uniform_buffer::<MoonlyEnvironmentUniform>(false),
+                texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
@@ -199,6 +210,7 @@ pub(crate) fn prepare_combine_bind_groups(
             clip_from_world,
             &inputs.config,
             &inputs.ao_settings,
+            view.world_from_view.translation(),
         ));
         environment.write_buffer(&inputs.device, &inputs.queue);
         let bind_group = inputs.device.create_bind_group(
@@ -217,6 +229,7 @@ pub(crate) fn prepare_combine_bind_groups(
                 &targets.ao.texture.default_view,
                 &targets.volumetrics.texture.default_view,
                 &targets.local_volumetrics.texture.default_view,
+                &targets.froxel.texture.default_view,
             )),
         );
         commands
@@ -229,7 +242,7 @@ pub(crate) fn render_combine(
     view: ViewQuery<
         (
             &ExtractedCamera,
-            &MoonlyViewTargets,
+            &ViewTarget,
             &ViewCombinePipeline,
             &ViewCombineBindGroup,
         ),
@@ -239,11 +252,11 @@ pub(crate) fn render_combine(
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,
     mut context: RenderContext,
 ) {
-    let (camera, targets, pipeline_id, bind_group) = view.into_inner();
+    let (camera, target, pipeline_id, bind_group) = view.into_inner();
     let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) else {
         return;
     };
-    let attachments = [Some(targets.scene.get_attachment())];
+    let attachments = [Some(target.get_unsampled_color_attachment())];
     let diagnostics = context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {

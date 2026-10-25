@@ -14,13 +14,14 @@ pub enum MoonlyPass {
     AmbientOcclusion,
     Volumetrics,
     Combine,
+    Forward,
     Post,
     Bloom,
     Luminance,
 }
 
 impl MoonlyPass {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::GBuffer,
         Self::ShadowLocal,
         Self::ShadowSun,
@@ -30,6 +31,7 @@ impl MoonlyPass {
         Self::AmbientOcclusion,
         Self::Volumetrics,
         Self::Combine,
+        Self::Forward,
         Self::Post,
         Self::Bloom,
         Self::Luminance,
@@ -47,9 +49,10 @@ impl MoonlyPass {
             Self::AmbientOcclusion => 6,
             Self::Volumetrics => 7,
             Self::Combine => 8,
-            Self::Post => 9,
-            Self::Bloom => 10,
-            Self::Luminance => 11,
+            Self::Forward => 9,
+            Self::Post => 10,
+            Self::Bloom => 11,
+            Self::Luminance => 12,
         }
     }
 
@@ -65,6 +68,7 @@ impl MoonlyPass {
             Self::AmbientOcclusion => "ao",
             Self::Volumetrics => "volumetrics",
             Self::Combine => "combine",
+            Self::Forward => "forward",
             Self::Post => "post",
             Self::Bloom => "bloom",
             Self::Luminance => "luminance",
@@ -141,7 +145,7 @@ mod tests {
         }
         assert_eq!(
             diagnostics.completed_total(),
-            Some(Duration::from_micros(120))
+            Some(Duration::from_micros(130))
         );
     }
 }

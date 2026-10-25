@@ -49,6 +49,7 @@ type ShadowCameraQuery<'w, 's> = Query<
     (
         Entity,
         &'static ExtractedView,
+        &'static crate::light_packages::MoonlyViewLightPackage,
         Option<&'static MoonlyOcclusionState>,
     ),
     With<MoonlyCamera>,
@@ -61,8 +62,12 @@ pub(crate) fn prepare_spot_shadow_targets(
 ) {
     let shadow_batches = std::mem::take(&mut inputs.shadows.batches);
     let sun_cascades = std::mem::take(&mut inputs.sun.cascades);
-    let direct_light = inputs.package.v_direct.first().cloned();
-    for (entity, camera, occlusion) in &views {
+    for (entity, camera, package, occlusion) in &views {
+        let context = ShadowViewContext {
+            camera,
+            occlusion,
+            package: &package.0,
+        };
         let camera_position = camera.world_from_view.translation();
         let fallback_xform = package_spot(&inputs.package)
             .map_or_else(SpotShadowXform::default, |light| {
@@ -75,13 +80,7 @@ pub(crate) fn prepare_spot_shadow_targets(
         };
         let mut batches = Vec::new();
         for batch in &shadow_batches {
-            batches.push(prepare_batch(
-                &mut inputs,
-                batch,
-                atlas_size,
-                camera,
-                occlusion,
-            ));
+            batches.push(prepare_batch(&mut inputs, batch, atlas_size, &context));
         }
         if batches.is_empty() {
             batches.push(prepare_fallback_batch(
@@ -92,7 +91,7 @@ pub(crate) fn prepare_spot_shadow_targets(
         }
         let mut sun_batches = Vec::new();
         let mut near_minmax = None;
-        if let Some(light) = direct_light.as_ref() {
+        if let Some(light) = package.0.v_direct.first() {
             let sun_atlas_size = inputs.sun.pool_size.max(MIN_ATLAS_SIZE);
             for (index, cascade) in sun_cascades.iter().enumerate() {
                 let create_minmax = index == 0 && inputs.sun.use_minmax_near;
@@ -119,12 +118,17 @@ pub(crate) fn prepare_spot_shadow_targets(
     inputs.sun.cascades = sun_cascades;
 }
 
+struct ShadowViewContext<'a> {
+    camera: &'a ExtractedView,
+    occlusion: Option<&'a MoonlyOcclusionState>,
+    package: &'a LightPackage,
+}
+
 fn prepare_batch(
     inputs: &mut ShadowTargetInputs,
     batch: &MoonlyShadowBatch,
     atlas_size: u32,
-    camera: &ExtractedView,
-    occlusion: Option<&MoonlyOcclusionState>,
+    context: &ShadowViewContext,
 ) -> MoonlyShadowBatchTarget {
     let texture = inputs
         .cache
@@ -139,8 +143,14 @@ fn prepare_batch(
             source_entity: light.source_entity,
             omnipart_face: light.omnipart_face,
         };
-        let occluded = occlusion.is_some_and(|state| !state.is_visible(key));
-        if occluded || !crate::visibility::light_visible(light, camera) {
+        let layer_visible = context.package.v_shadowed.iter().any(|candidate| {
+            candidate.source_entity == light.source_entity
+                && candidate.omnipart_face == light.omnipart_face
+        });
+        let occluded = context
+            .occlusion
+            .is_some_and(|state| !state.is_visible(key));
+        if !layer_visible || occluded || !crate::visibility::light_visible(light, context.camera) {
             continue;
         }
         views.push(prepare_view(inputs, view, light));

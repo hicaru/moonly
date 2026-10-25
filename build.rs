@@ -11,6 +11,16 @@ const WESL_PACKAGES: &[(&str, &str, &str)] = &[
         "package::accum_spot",
     ),
     (
+        "crates/moonly_render/src/depth_copy.wesl",
+        "crates/moonly_render/src",
+        "package::depth_copy",
+    ),
+    (
+        "crates/moonly_render/src/froxel.wesl",
+        "crates/moonly_render/src",
+        "package::froxel",
+    ),
+    (
         "crates/moonly_core/src/core_common.wesl",
         "crates/moonly_core/src",
         "package::core_common",

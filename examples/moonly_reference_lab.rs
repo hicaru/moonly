@@ -2,7 +2,7 @@
 mod support;
 
 use bevy::{app::AppExit, prelude::*, render::camera::CameraRenderGraph, window::WindowResolution};
-use moonly_core::{AmbientOcclusionMode, MoonlyConfig, MoonlyCorePlugin};
+use moonly_core::{AmbientOcclusionMode, LightPackage, MoonlyConfig, MoonlyCorePlugin};
 use moonly_cull::MoonlyCullPlugin;
 use moonly_gi::MoonlyGiPlugin;
 use moonly_post::LuminanceAdaptationState;
@@ -14,6 +14,7 @@ use moonly_shadows::MoonlyShadowsPlugin;
 use moonly_volumetrics::{SunShaftsConfig, SunShaftsMode};
 use support::{
     CaptureOptions, CaptureState, capture_system,
+    native_reference::setup_offscreen_capture,
     reference_scene::{debug_view_from_args, move_cascade_camera, move_caster, spawn_scene},
 };
 
@@ -40,6 +41,21 @@ fn main() -> AppExit {
             },
             ..MoonlyConfig::moonly_r4()
         })
+        .insert_resource(moonly_core::WeatherEnvironment {
+            fog_density: if std::env::args().any(|arg| arg == "--fog" || arg == "--fog-transparent")
+            {
+                0.03
+            } else {
+                0.0
+            },
+            fog_height_falloff: 0.08,
+            fog_height_reference: 0.0,
+            ..moonly_core::WeatherEnvironment::default()
+        })
+        .insert_resource(moonly_volumetrics::MoonlyFroxelConfig {
+            enabled: std::env::args().any(|arg| arg == "--froxel"),
+            ..moonly_volumetrics::MoonlyFroxelConfig::default()
+        })
         .insert_resource(SunShaftsConfig {
             mode: if std::env::args().any(|arg| arg == "--screen-shafts") {
                 SunShaftsMode::ScreenSpace
@@ -54,7 +70,7 @@ fn main() -> AppExit {
         ))
         .insert_resource(CaptureState::default())
         .insert_resource(support::deterministic_time())
-        .add_systems(Startup, spawn_scene)
+        .add_systems(Startup, (setup_offscreen_capture, spawn_scene).chain())
         .add_systems(
             Update,
             (
@@ -70,7 +86,11 @@ fn main() -> AppExit {
         .run()
 }
 
-fn report_exposure_probe(state: Res<LuminanceAdaptationState>, mut frame: Local<u32>) {
+fn report_exposure_probe(
+    state: Res<LuminanceAdaptationState>,
+    package: Res<LightPackage>,
+    mut frame: Local<u32>,
+) {
     *frame += 1;
     if *frame == 45 && std::env::args().any(|arg| arg == "--exposure-probe") {
         info!(
@@ -78,6 +98,13 @@ fn report_exposure_probe(state: Res<LuminanceAdaptationState>, mut frame: Local<
             state.target_luminance,
             state.adapted_luminance,
             state.compute_exposure_scale()
+        );
+        info!(
+            "Lights: point {}, spot {}, shadowed {}, direct {}",
+            package.v_point.len(),
+            package.v_spot.len(),
+            package.v_shadowed.len(),
+            package.v_direct.len()
         );
     }
 }

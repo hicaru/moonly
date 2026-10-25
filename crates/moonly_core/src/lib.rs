@@ -2,11 +2,15 @@
 
 pub mod config;
 pub mod hemisphere;
+mod light_collection;
+mod light_layers;
 pub mod lights;
+mod native_lights;
 pub mod projector;
 pub mod shader_bus;
 pub mod shadow_package;
 pub mod spot_xform;
+mod weather_fog;
 
 use bevy::{
     asset::embedded_asset,
@@ -30,9 +34,10 @@ pub use crate::{
         HEMI_CUBE_DIRS, HEMI_FALL_SPEED, HEMI_RISE_SPEED, HEMI_SAMPLE_COUNT, HEMI_SAMPLE_DIRS,
         HemisphereTracker, WeatherEnvironment, update_hemisphere_trackers,
     },
+    light_collection::collect_light_packages,
     lights::{
         LightPackage, MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight,
-        VirtualGiLightPackage, VolumetricLightSettings, collect_light_packages,
+        VirtualGiLightPackage, VolumetricLightSettings,
     },
     projector::MoonlyProjector,
     shader_bus::{SHADER_BUS_SLOT_COUNT, ShaderBus},
@@ -99,6 +104,7 @@ impl Plugin for MoonlyCorePlugin {
         .register_type::<MoonlyLight>()
         .register_type::<MoonlyLightType>()
         .register_type::<MoonlyLightFlags>()
+        .register_type::<native_lights::MoonlyNativeLight>()
         .register_type::<VolumetricLightSettings>()
         .register_type::<VirtualGiLight>()
         .register_type::<VirtualGiLightPackage>()
@@ -119,7 +125,14 @@ impl Plugin for MoonlyCorePlugin {
         .init_resource::<ShaderBus>()
         .add_systems(
             PostUpdate,
-            (collect_light_packages, update_hemisphere_trackers)
+            (
+                native_lights::remove_native_light_adapters,
+                native_lights::sync_native_point_lights,
+                native_lights::sync_native_spot_lights,
+                native_lights::sync_native_directional_lights,
+                collect_light_packages,
+                update_hemisphere_trackers,
+            )
                 .chain()
                 .in_set(MoonlySystemSet::CollectLights),
         );

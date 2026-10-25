@@ -79,6 +79,12 @@ pub struct WeatherEnvironment {
     pub fog_far: f32,
     /// Plane equation for `calc_fogging(w_pos)` in `common_functions.h` (`fog_plane`).
     pub fog_plane: Vec4,
+    /// Exponential fog density per meter. Zero disables this term.
+    pub fog_density: f32,
+    /// Height attenuation rate for exponential fog.
+    pub fog_height_falloff: f32,
+    /// Reference height for height fog in meters.
+    pub fog_height_reference: f32,
     /// Skybox 6-face irradiance cube values (`hemi_cube`).
     pub sky_cube: [f32; 6],
 }
@@ -94,6 +100,9 @@ impl Default for WeatherEnvironment {
             fog_near: 0.0,
             fog_far: 200.0,
             fog_plane: Vec4::new(0.0, -0.002, 0.0, 0.02),
+            fog_density: 0.0,
+            fog_height_falloff: 0.08,
+            fog_height_reference: 0.0,
             sky_cube: [0.65, 0.55, 1.0, 0.25, 0.60, 0.58],
         }
     }
