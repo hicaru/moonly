@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use moonly_core::SunCascadeConfig;
 
-use crate::spot_xform::{look_to_rh_mat4, orthographic_rh_mat4};
+use crate::spot_xform::orthographic_rh_mat4;
 
 /// Number of sun shadow cascades in `moonly-monolith` (`SE_SUN_NEAR`, `SE_SUN_MIDDLE`, `SE_SUN_FAR`).
 pub const SUN_CASCADE_COUNT: usize = 3;
@@ -85,6 +85,63 @@ impl Default for SunCascades {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CascadeCameraBasis {
+    pos: Vec3,
+    fwd: Vec3,
+    right: Vec3,
+    up: Vec3,
+    tan_half_x: f32,
+    tan_half_y: f32,
+    sun_f: Vec3,
+    sun_s: Vec3,
+    sun_u: Vec3,
+}
+
+impl CascadeCameraBasis {
+    #[inline]
+    fn new(cam: &CameraFrustumParams, sun_dir: Vec3) -> Self {
+        let tan_half_y = (0.5 * cam.fov_y_radians).tan();
+        let tan_half_x = tan_half_y * cam.aspect_ratio;
+        let fwd = cam.camera_transform.forward().as_vec3();
+        let right = cam.camera_transform.right().as_vec3();
+        let up = cam.camera_transform.up().as_vec3();
+        let pos = cam.camera_transform.translation;
+        let sun_f = sun_dir.normalize_or_zero();
+        let up_ref = if sun_f.y.abs() > 0.99 {
+            Vec3::Z
+        } else {
+            Vec3::Y
+        };
+        let sun_s = sun_f.cross(up_ref).normalize_or_zero();
+        let sun_u = sun_s.cross(sun_f);
+        Self {
+            pos,
+            fwd,
+            right,
+            up,
+            tan_half_x,
+            tan_half_y,
+            sun_f,
+            sun_s,
+            sun_u,
+        }
+    }
+
+    #[inline]
+    fn view_matrix(&self, eye: Vec3) -> Mat4 {
+        let s = self.sun_s;
+        let u = self.sun_u;
+        let f = self.sun_f;
+        Mat4::from_cols(
+            Vec4::new(s.x, u.x, -f.x, 0.0),
+            Vec4::new(s.y, u.y, -f.y, 0.0),
+            Vec4::new(s.z, u.z, -f.z, 0.0),
+            Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0),
+        )
+    }
+}
+
 impl SunCascades {
     /// Recompute all three sun cascades from camera frustum parameters and `SunCascadeConfig`.
     pub fn compute(
@@ -94,6 +151,7 @@ impl SunCascades {
         cfg: &SunCascadeConfig,
         smap_resolution: u32,
     ) {
+        let basis = CascadeCameraBasis::new(cam, sun_dir);
         let splits = [
             (cam.z_near, cfg.near_split),
             (cfg.near_split, cfg.middle_split),
@@ -101,36 +159,28 @@ impl SunCascades {
         ];
         for (idx, &(near_d, far_d)) in splits.iter().enumerate() {
             if let Some(slice) = self.cascades.get_mut(idx) {
-                *slice =
-                    compute_single_cascade(cam, sun_dir, (near_d, far_d), cfg, smap_resolution);
+                *slice = compute_single_cascade(&basis, (near_d, far_d), cfg, smap_resolution);
             }
         }
     }
 }
 
 fn compute_single_cascade(
-    cam: &CameraFrustumParams,
-    sun_dir: Vec3,
+    basis: &CascadeCameraBasis,
     range: (f32, f32),
     cfg: &SunCascadeConfig,
     smap_resolution: u32,
 ) -> SunCascadeSlice {
     let (split_near, split_far) = range;
-    let corners = frustum_slice_corners(cam, split_near, split_far);
+    let corners = frustum_slice_corners(basis, split_near, split_far);
     let mut center = Vec3::ZERO;
     for c in &corners {
         center += *c;
     }
     center *= 0.125;
 
-    let l_dir = sun_dir.normalize_or_zero();
-    let up_ref = if l_dir.y.abs() > 0.99 {
-        Vec3::Z
-    } else {
-        Vec3::Y
-    };
-    let eye = center - l_dir * cfg.diagonal_offset;
-    let view = look_to_rh_mat4(eye, l_dir, up_ref);
+    let eye = center - basis.sun_f * cfg.diagonal_offset;
+    let view = basis.view_matrix(eye);
 
     let (mut min_ls, mut max_ls) = light_space_aabb(&corners, view);
     min_ls.z -= cfg.diagonal_offset;
@@ -161,30 +211,27 @@ fn compute_single_cascade(
     }
 }
 
-fn frustum_slice_corners(cam: &CameraFrustumParams, near_d: f32, far_d: f32) -> [Vec3; 8] {
-    let tan_half_y = (0.5 * cam.fov_y_radians).tan();
-    let tan_half_x = tan_half_y * cam.aspect_ratio;
-    let fwd = cam.camera_transform.forward().as_vec3();
-    let right = cam.camera_transform.right().as_vec3();
-    let up = cam.camera_transform.up().as_vec3();
-    let pos = cam.camera_transform.translation;
-
-    let near_c = pos + fwd * near_d;
-    let far_c = pos + fwd * far_d;
-    let nh = near_d * tan_half_y;
-    let nw = near_d * tan_half_x;
-    let fh = far_d * tan_half_y;
-    let fw = far_d * tan_half_x;
+fn frustum_slice_corners(basis: &CascadeCameraBasis, near_d: f32, far_d: f32) -> [Vec3; 8] {
+    let near_c = basis.pos + basis.fwd * near_d;
+    let far_c = basis.pos + basis.fwd * far_d;
+    let nh = near_d * basis.tan_half_y;
+    let nw = near_d * basis.tan_half_x;
+    let fh = far_d * basis.tan_half_y;
+    let fw = far_d * basis.tan_half_x;
+    let r_nw = basis.right * nw;
+    let u_nh = basis.up * nh;
+    let r_fw = basis.right * fw;
+    let u_fh = basis.up * fh;
 
     [
-        near_c - right * nw - up * nh,
-        near_c + right * nw - up * nh,
-        near_c + right * nw + up * nh,
-        near_c - right * nw + up * nh,
-        far_c - right * fw - up * fh,
-        far_c + right * fw - up * fh,
-        far_c + right * fw + up * fh,
-        far_c - right * fw + up * fh,
+        near_c - r_nw - u_nh,
+        near_c + r_nw - u_nh,
+        near_c + r_nw + u_nh,
+        near_c - r_nw + u_nh,
+        far_c - r_fw - u_fh,
+        far_c + r_fw - u_fh,
+        far_c + r_fw + u_fh,
+        far_c - r_fw + u_fh,
     ]
 }
 
