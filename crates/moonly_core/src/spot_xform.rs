@@ -53,19 +53,23 @@ impl SpotShadowXform {
         prev_size: u32,
     ) -> Self {
         let l_dir = light.direction.normalize_or_zero();
-        let up_ref = if l_dir.y.abs() > 0.99 {
-            Vec3::Z
+        let fallback_right = if light.right.length_squared() > f32::EPSILON {
+            Vec3::ZERO
         } else {
-            Vec3::Y
+            let up_ref = if l_dir.y.abs() > 0.99 {
+                Vec3::Z
+            } else {
+                Vec3::Y
+            };
+            up_ref.cross(l_dir).normalize_or_zero()
         };
-        let fallback_right = up_ref.cross(l_dir).normalize_or_zero();
         let l_right = if light.right.length_squared() > f32::EPSILON {
             light.right.normalize_or_zero()
         } else {
             fallback_right
         };
         let l_up = l_dir.cross(l_right).normalize_or_zero();
-        let view = look_to_rh_mat4(light.position, l_dir, l_up);
+        let view = look_to_rh_unit_dir(light.position, l_dir, l_up);
 
         let dist_sq = camera_pos.distance_squared(light.position);
         let ssa = ((light.range * light.range) / (1.0 + dist_sq)).clamp(0.0, 1.0);
@@ -98,9 +102,15 @@ impl SpotShadowXform {
 }
 
 /// Build a right-handed view matrix looking along `dir` with `up` reference.
+#[inline]
 #[must_use]
 pub fn look_to_rh_mat4(eye: Vec3, dir: Vec3, up: Vec3) -> Mat4 {
-    let f = dir.normalize_or_zero();
+    look_to_rh_unit_dir(eye, dir.normalize_or_zero(), up)
+}
+
+#[inline]
+#[must_use]
+fn look_to_rh_unit_dir(eye: Vec3, f: Vec3, up: Vec3) -> Mat4 {
     let s = f.cross(up).normalize_or_zero();
     let u = s.cross(f);
     Mat4::from_cols(
