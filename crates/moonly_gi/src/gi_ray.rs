@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::gi_bounce::GiReflectorBox;
-use crate::gi_intersection::raycast_all_reflectors;
+use crate::gi_intersection::{raycast_all_reflectors, raycast_any_reflector};
 
 /// World-space ray bounds for a GI nearest-hit query.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,6 +44,11 @@ pub struct GiRayHit {
 pub trait GiRayGeometry {
     /// Return the nearest valid hit within the ray bounds.
     fn nearest_hit(&self, ray: GiRayQuery) -> Option<GiRayHit>;
+
+    /// Return `true` when any valid hit exists within the ray bounds.
+    fn any_hit(&self, ray: GiRayQuery) -> bool {
+        self.nearest_hit(ray).is_some()
+    }
 }
 
 impl GiRayGeometry for [GiReflectorBox] {
@@ -61,11 +66,25 @@ impl GiRayGeometry for [GiReflectorBox] {
             albedo,
         })
     }
+
+    fn any_hit(&self, ray: GiRayQuery) -> bool {
+        raycast_any_reflector(
+            ray.origin,
+            ray.direction,
+            ray.max_distance,
+            ray.min_distance,
+            self,
+        )
+    }
 }
 
 impl<const N: usize> GiRayGeometry for [GiReflectorBox; N] {
     fn nearest_hit(&self, ray: GiRayQuery) -> Option<GiRayHit> {
         self.as_slice().nearest_hit(ray)
+    }
+
+    fn any_hit(&self, ray: GiRayQuery) -> bool {
+        self.as_slice().any_hit(ray)
     }
 }
 
@@ -77,11 +96,20 @@ pub(crate) struct GiCombinedGeometry<'a, G: GiRayGeometry + ?Sized> {
 impl<G: GiRayGeometry + ?Sized> GiRayGeometry for GiCombinedGeometry<'_, G> {
     fn nearest_hit(&self, ray: GiRayQuery) -> Option<GiRayHit> {
         let triangle = self.triangles.nearest_hit(ray);
-        let reflector = self.reflectors.nearest_hit(ray);
-        match (triangle, reflector) {
-            (Some(a), Some(b)) => Some(if a.distance <= b.distance { a } else { b }),
-            (Some(hit), None) | (None, Some(hit)) => Some(hit),
-            (None, None) => None,
+        let narrowed = match triangle {
+            Some(hit) => GiRayQuery {
+                max_distance: hit.distance,
+                ..ray
+            },
+            None => ray,
+        };
+        match self.reflectors.nearest_hit(narrowed) {
+            Some(reflector) => Some(reflector),
+            None => triangle,
         }
+    }
+
+    fn any_hit(&self, ray: GiRayQuery) -> bool {
+        self.triangles.any_hit(ray) || self.reflectors.any_hit(ray)
     }
 }
