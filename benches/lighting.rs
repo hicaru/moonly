@@ -3,7 +3,13 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use moonly::{post::karis_box4_average, prelude::*};
+use moonly::{
+    post::{
+        calc_gauss_dual_wave, evaluate_lens_flare_ghost, karis_box4_average, karis_downsample_13,
+    },
+    prelude::*,
+    shadows::LocalShadowBatches,
+};
 
 fn build_test_reflectors(count: usize) -> Vec<GiReflectorBox> {
     let mut out = Vec::with_capacity(count);
@@ -124,6 +130,30 @@ fn bench_occ_rasterizer(c: &mut Criterion) {
             black_box(visible)
         });
     });
+
+    group.bench_function("rasterize_16_quads_and_propagate", |b| {
+        let mut rast = OccRasterizer::default();
+        b.iter(|| {
+            rast.clear();
+            for i in 0..16_usize {
+                let x = (i % 4) as f32 * 14.0 + 2.0;
+                let y = (i / 4) as f32 * 14.0 + 2.0;
+                let z = 0.15 + (i as f32) * 0.03;
+                rast.rasterize_triangle(
+                    Vec3::new(x, y, z),
+                    Vec3::new(x + 12.0, y, z),
+                    Vec3::new(x, y + 12.0, z),
+                );
+                rast.rasterize_triangle(
+                    Vec3::new(x + 12.0, y, z),
+                    Vec3::new(x + 12.0, y + 12.0, z),
+                    Vec3::new(x, y + 12.0, z),
+                );
+            }
+            rast.propagate();
+            black_box(rast.buf_depth_0.first().copied())
+        });
+    });
     group.finish();
 }
 
@@ -205,6 +235,34 @@ fn bench_cascades_and_post(c: &mut Criterion) {
                 let aces = evaluate_tonemap_cpu(hdr + k, TonemapOperator::AcesHill);
                 let agx = evaluate_tonemap_cpu(aces, TonemapOperator::AgX);
                 acc += encode_pq_st2084(agx, 1000.0);
+            }
+            black_box(acc)
+        });
+    });
+
+    group.bench_function("local_shadow_batches_24_lights", |b| {
+        let mut pkg = LightPackage::default();
+        pkg.v_shadowed.clone_from(&lights);
+        let cfg = MoonlyConfig::default();
+        let mut batches = LocalShadowBatches::default();
+        b.iter(|| {
+            batches.rebuild(black_box(&pkg), black_box(&cfg), Vec3::ZERO);
+            black_box((batches.batch_count(), batches.view_count()))
+        });
+    });
+
+    group.bench_function("bloom_gauss_and_lens_flare_256_samples", |b| {
+        let samples = [Vec3::new(1.4, 0.9, 0.5); 13];
+        b.iter(|| {
+            let weights = calc_gauss_dual_wave(black_box(0.35));
+            let mut acc = Vec3::splat(weights.first().copied().unwrap_or(0.0));
+            for i in 0..256_u32 {
+                let u = ((i & 15) as f32) * (1.0 / 16.0);
+                let v = ((i >> 4) as f32) * (1.0 / 16.0);
+                let ds = karis_downsample_13(black_box(samples));
+                let flare =
+                    evaluate_lens_flare_ghost(Vec2::new(u, v), Vec2::splat(0.3), 0.18, 0.42);
+                acc += ds + flare;
             }
             black_box(acc)
         });

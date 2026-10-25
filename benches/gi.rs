@@ -149,10 +149,33 @@ fn bench_light_tracking(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_bvh_oblique(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gi_bvh_oblique_1024_rays");
+    for count in [10_000, 100_000] {
+        let bvh = build_bvh(&mut build_triangles(count));
+        group.throughput(Throughput::Elements(1024));
+        group.bench_function(format!("triangles_{count}"), |bencher| {
+            bencher.iter(|| {
+                let mut hits = 0_usize;
+                for index in 0..1024_usize {
+                    let x = (index % 32) as f32 * 0.9 + 0.1;
+                    let y = (index / 32) as f32 * 0.9 + 0.1;
+                    let dir = Vec3::new(0.35, -0.25, -0.9).normalize();
+                    let ray = GiRayQuery::new(Vec3::new(x, y, 5.0), dir, 0.0001, 25.0);
+                    hits += usize::from(bvh.nearest_hit(black_box(ray)).is_some());
+                }
+                black_box(hits)
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_bvh_build,
     bench_bvh_nearest,
+    bench_bvh_oblique,
     bench_gi_cache,
     bench_light_tracking
 );
