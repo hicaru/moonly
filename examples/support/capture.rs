@@ -137,6 +137,14 @@ fn save_and_validate(image: &Image, path: &Path) -> Result<CaptureReport, String
         .clone()
         .try_into_dynamic()
         .map_err(|error| error.to_string())?;
+    if matches!(
+        dynamic,
+        image::DynamicImage::ImageRgb32F(_) | image::DynamicImage::ImageRgba32F(_)
+    ) {
+        let linear = dynamic.clone().into_rgb32f();
+        let center = (linear.width() / 2, linear.height() / 2);
+        info!("capture linear center: {:?}", linear.get_pixel(center.0, center.1).0);
+    }
     encode_screenshot(dynamic)
         .save(path)
         .map_err(|error| error.to_string())?;

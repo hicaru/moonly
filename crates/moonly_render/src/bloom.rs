@@ -38,6 +38,7 @@ struct MoonlyBloomUniform {
     input_size: Vec2,
     output_size: Vec2,
     mode: UVec4,
+    params: Vec4,
 }
 
 pub(crate) fn init_bloom_pipeline(
@@ -123,14 +124,33 @@ pub(crate) struct BloomPrepareInputs<'w> {
     queue: Res<'w, RenderQueue>,
     cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyBloomPipeline>,
+    config: Res<'w, Hdr10PostConfig>,
+}
+
+type BloomView = (
+    Entity,
+    &'static crate::settings::MoonlyExposure,
+    &'static MoonlyViewTargets,
+    &'static ViewTarget,
+    Option<&'static crate::MoonlyPostSettings>,
+);
+
+struct BloomPassSettings {
+    stage: usize,
+    exposure: f32,
+    threshold: f32,
+    softness: f32,
 }
 
 pub(crate) fn prepare_bloom_bind_groups(
     mut commands: Commands,
     inputs: BloomPrepareInputs,
-    views: Query<(Entity, &MoonlyViewTargets, &ViewTarget), With<MoonlyCamera>>,
+    views: Query<BloomView, With<MoonlyCamera>>,
 ) {
-    for (entity, targets, view) in &views {
+    for (entity, camera, targets, view, settings) in &views {
+        let settings = settings
+            .copied()
+            .unwrap_or_else(|| crate::MoonlyPostSettings::from_config(&inputs.config));
         let groups = [0_usize, 1, 2, 3, 4].map(|stage| {
             let source = bloom_source(targets, stage);
             let source_size = if stage == 0 {
@@ -143,8 +163,19 @@ pub(crate) fn prepare_bloom_bind_groups(
             } else {
                 &source.texture.default_view
             };
-            let target = bloom_target(targets, stage);
-            create_bloom_bind_group(&inputs, source_view, source_size, target, stage)
+            let pass = BloomPassSettings {
+                stage,
+                exposure: camera.0,
+                threshold: settings.bloom_threshold,
+                softness: settings.bloom_softness,
+            };
+            create_bloom_bind_group(
+                &inputs,
+                source_view,
+                source_size,
+                bloom_target(targets, stage),
+                &pass,
+            )
         });
         commands.entity(entity).insert(ViewBloomBindGroups(groups));
     }
@@ -168,13 +199,19 @@ fn create_bloom_bind_group(
     source: &bevy::render::render_resource::TextureView,
     input: bevy::render::render_resource::Extent3d,
     target: &ColorAttachment,
-    stage: usize,
+    settings: &BloomPassSettings,
 ) -> BindGroup {
     let output = target.texture.texture.size();
     let uniform = MoonlyBloomUniform {
         input_size: Vec2::new(input.width as f32, input.height as f32),
         output_size: Vec2::new(output.width as f32, output.height as f32),
-        mode: UVec4::splat(stage as u32),
+        mode: UVec4::splat(settings.stage as u32),
+        params: Vec4::new(
+            settings.exposure,
+            settings.threshold,
+            settings.softness,
+            0.0,
+        ),
     };
     let mut uniform = UniformBuffer::from(uniform);
     uniform.write_buffer(&inputs.device, &inputs.queue);
@@ -194,7 +231,14 @@ pub(crate) struct BloomRenderInputs<'w> {
 }
 
 pub(crate) fn render_bloom(
-    view: ViewQuery<(&MoonlyViewTargets, &ViewBloomBindGroups), With<MoonlyCamera>>,
+    view: ViewQuery<
+        (
+            &MoonlyViewTargets,
+            &ViewBloomBindGroups,
+            Option<&crate::MoonlyPostSettings>,
+        ),
+        With<MoonlyCamera>,
+    >,
     inputs: BloomRenderInputs,
     mut context: RenderContext,
 ) {
@@ -204,10 +248,13 @@ pub(crate) fn render_bloom(
         config,
         timer,
     } = inputs;
-    if config.bloom_intensity <= 0.0 {
+    let (targets, groups, settings) = view.into_inner();
+    let intensity = settings.map_or(config.bloom_intensity, |settings| {
+        settings.bloom_intensity
+    });
+    if intensity <= 0.0 {
         return;
     }
-    let (targets, groups) = view.into_inner();
     for (stage, group) in groups.0.iter().enumerate() {
         let id = if stage < 3 {
             pipeline.downsample

@@ -18,7 +18,6 @@ use moonly_core::{
 use crate::{
     camera::MoonlyCamera,
     light_volume::clip_from_local,
-    material_lut::MoonlyMaterialLutTexture,
     projector::MoonlyFallbackProjector,
     shadow_targets::{MoonlyShadowSample, MoonlySpotShadowTarget},
     spot_pipeline::MoonlySpotPipeline,
@@ -74,7 +73,11 @@ impl MoonlySpotUniform {
                 } else {
                     (light.cone_angle * 0.5).cos()
                 }),
-            color: light.color.extend(1.0),
+            color: light.color.extend(if light.flags.contains(MoonlyLightFlags::VIRTUAL_GI) {
+                0.0
+            } else {
+                1.0
+            }),
             view_position: camera_position.extend(1.0),
             shadow_from_world: shadow.map_or(Mat4::IDENTITY, |shadow| shadow.xform.combine),
             projector_from_world: projector.combine,
@@ -134,7 +137,6 @@ pub(crate) struct SpotPrepareInputs<'w> {
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlySpotPipeline>,
     virtual_lights: Res<'w, VirtualGiLightPackage>,
-    lut: Res<'w, MoonlyMaterialLutTexture>,
     images: Res<'w, RenderAssets<GpuImage>>,
     fallback: Res<'w, MoonlyFallbackProjector>,
     jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
@@ -239,8 +241,6 @@ fn create_spot_bind_group(
             &context.targets.normal.texture.default_view,
             &context.targets.albedo_gloss.texture.default_view,
             &uniform,
-            &inputs.lut.view,
-            &inputs.lut.sampler,
             depth,
             &inputs.pipeline.shadow_sampler,
             projector_view,

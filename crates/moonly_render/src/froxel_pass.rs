@@ -225,7 +225,10 @@ fn create_froxel_bind_group(
 }
 
 pub(crate) fn render_froxel(
-    view: ViewQuery<(&MoonlyViewTargets, Option<&ViewFroxelBindGroup>), With<MoonlyCamera>>,
+    view: ViewQuery<
+        (&MoonlyViewTargets, Option<&ViewFroxelBindGroup>),
+        (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+    >,
     cache: Res<PipelineCache>,
     pipeline: Res<MoonlyFroxelPipeline>,
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,

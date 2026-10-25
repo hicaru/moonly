@@ -97,7 +97,7 @@ fn update_or_insert(
 fn adapt_point(light: &PointLight) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Point,
-        flags: native_flags(light.shadow_maps_enabled, false),
+        flags: native_flags(light.shadow_maps_enabled),
         color: linear_color(light.color, light.intensity / FULL_SPHERE_STERADIANS),
         range: light.range,
         ..MoonlyLight::default()
@@ -107,7 +107,7 @@ fn adapt_point(light: &PointLight) -> MoonlyLight {
 fn adapt_spot(light: &SpotLight) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Spot,
-        flags: native_flags(light.shadow_maps_enabled, true),
+        flags: native_flags(light.shadow_maps_enabled),
         color: linear_color(light.color, light.intensity / FULL_SPHERE_STERADIANS),
         range: light.range,
         cone_angle: light.outer_angle,
@@ -119,19 +119,16 @@ fn adapt_spot(light: &SpotLight) -> MoonlyLight {
 fn adapt_directional(light: &DirectionalLight) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Direct,
-        flags: native_flags(light.shadow_maps_enabled, false),
+        flags: native_flags(light.shadow_maps_enabled),
         color: linear_color(light.color, light.illuminance),
         ..MoonlyLight::default()
     }
 }
 
-const fn native_flags(shadows: bool, volumetric: bool) -> MoonlyLightFlags {
-    let mut flags = MoonlyLightFlags::GI_ENABLED;
+const fn native_flags(shadows: bool) -> MoonlyLightFlags {
+    let mut flags = MoonlyLightFlags(0);
     if shadows {
         flags = flags.union(MoonlyLightFlags::SHADOW);
-    }
-    if volumetric {
-        flags = flags.union(MoonlyLightFlags::VOLUMETRIC);
     }
     flags
 }

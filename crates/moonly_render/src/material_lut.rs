@@ -1,13 +1,4 @@
-use bevy::{
-    prelude::*,
-    render::{
-        render_resource::{
-            Extent3d, Sampler, SamplerDescriptor, TexelCopyBufferLayout, TextureDescriptor,
-            TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
-        },
-        renderer::{RenderDevice, RenderQueue},
-    },
-};
+use bevy::prelude::*;
 
 pub const MOONLY_MATERIAL_LDOTN: usize = 128;
 pub const MOONLY_MATERIAL_LDOTH: usize = 256;
@@ -47,49 +38,6 @@ impl MoonlyMaterialLut {
         let index = ((slice * MOONLY_MATERIAL_LDOTH + y) * MOONLY_MATERIAL_LDOTN + x) * 2;
         Some([*self.data.get(index)?, *self.data.get(index + 1)?])
     }
-}
-
-#[derive(Resource)]
-pub(crate) struct MoonlyMaterialLutTexture {
-    pub view: TextureView,
-    pub sampler: Sampler,
-}
-
-pub(crate) fn init_moonly_material_lut_texture(
-    mut commands: Commands,
-    device: Res<RenderDevice>,
-    queue: Res<RenderQueue>,
-) {
-    let data = generate_moonly_material_lut();
-    let size = Extent3d {
-        width: MOONLY_MATERIAL_LDOTN as u32,
-        height: MOONLY_MATERIAL_LDOTH as u32,
-        depth_or_array_layers: MOONLY_MATERIAL_SLICES as u32,
-    };
-    let texture = device.create_texture(&TextureDescriptor {
-        label: Some("moonly_material_lut"),
-        size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D3,
-        format: TextureFormat::Rg8Unorm,
-        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        texture.as_image_copy(),
-        &data,
-        TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some((MOONLY_MATERIAL_LDOTN * 2) as u32),
-            rows_per_image: Some(MOONLY_MATERIAL_LDOTH as u32),
-        },
-        size,
-    );
-    commands.insert_resource(MoonlyMaterialLutTexture {
-        view: texture.create_view(&TextureViewDescriptor::default()),
-        sampler: device.create_sampler(&SamplerDescriptor::default()),
-    });
 }
 
 /// Generate the immutable material table from `r4_rendertarget.cpp`.

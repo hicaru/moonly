@@ -18,19 +18,20 @@ mod jitter;
 mod light_packages;
 mod light_volume;
 mod local_volumetrics;
-mod luminance;
-mod luminance_readback;
+mod material_adapters;
 pub mod material_lut;
 mod mesh_bind_groups;
 mod mesh_bounds;
 mod mesh_pipeline;
 mod minmax;
+mod motion_vectors;
 mod occlusion;
 mod occlusion_state;
 pub mod phase;
 mod point_volume;
 mod post;
 mod projector;
+mod settings;
 mod queue;
 mod reflected_lights;
 mod render_passes;
@@ -64,15 +65,20 @@ use bevy::{
         render_resource::{SpecializedMeshPipelines, SpecializedRenderPipelines},
         uniform::UniformComponentPlugin,
     },
+    shader::load_shader_library,
 };
-use moonly_post::{Hdr10PostConfig, LuminanceAdaptationState, MoonlyPostPlugin, OpticsMode};
+use moonly_post::{Hdr10PostConfig, MoonlyPostPlugin, OpticsMode};
 use moonly_volumetrics::{MoonlyFroxelConfig, MoonlyVolumetricsPlugin, SunShaftsConfig};
 
-pub use camera::{MoonlyCamera, MoonlyCameraRole, MoonlyDebugView, MoonlyLinearOutput};
+pub use camera::{
+    MoonlyCamera, MoonlyCameraRole, MoonlyDebugView, MoonlyExternalFog, MoonlyLinearOutput,
+};
 pub use caster_visibility::MoonlyCasterVisibility;
 pub use diagnostics::{GpuTiming, MoonlyGpuDiagnostics, MoonlyPass};
 pub use graph::{MoonlyRender, MoonlyRenderSystems};
+pub use material_adapters::MoonlyMaterialAdapters;
 pub use material_lut::{MoonlyMaterialLut, generate_moonly_material_lut};
+pub use settings::MoonlyPostSettings;
 pub use surface::MoonlySurface;
 
 use combine::MoonlyCombinePipeline;
@@ -91,15 +97,17 @@ pub struct MoonlyRenderPlugin;
 impl Plugin for MoonlyRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((MoonlyVolumetricsPlugin, MoonlyPostPlugin));
-        let luminance_sender = luminance_readback::install_luminance_channel(app);
         let gpu_timing_sender = gpu_timer::install_gpu_timing_channel(app);
         app.register_type::<MoonlyCamera>()
             .register_type::<MoonlyCameraRole>()
             .register_type::<MoonlyDebugView>()
+            .register_type::<MoonlyExternalFog>()
             .register_type::<MoonlyLinearOutput>()
+            .register_type::<MoonlyPostSettings>()
             .register_type::<MoonlySurface>()
             .init_resource::<MoonlyGpuDiagnostics>()
             .init_resource::<MoonlyMaterialLut>()
+            .init_resource::<MoonlyMaterialAdapters>()
             .init_resource::<MoonlyCasterVisibility>()
             .init_resource::<mesh_bounds::MoonlyMeshBounds>()
             .add_systems(
@@ -111,9 +119,9 @@ impl Plugin for MoonlyRenderPlugin {
                 ),
             )
             .add_plugins(ExtractResourcePlugin::<mesh_bounds::MoonlyMeshBounds>::default())
+            .add_plugins(ExtractResourcePlugin::<MoonlyMaterialAdapters>::default())
             .add_plugins(ExtractResourcePlugin::<MoonlyCasterVisibility>::default())
             .add_plugins(ExtractResourcePlugin::<Hdr10PostConfig>::default())
-            .add_plugins(ExtractResourcePlugin::<LuminanceAdaptationState>::default())
             .add_plugins(ExtractResourcePlugin::<OpticsMode>::default())
             .add_plugins(ExtractResourcePlugin::<SunShaftsConfig>::default())
             .add_plugins(ExtractResourcePlugin::<MoonlyFroxelConfig>::default())
@@ -121,7 +129,10 @@ impl Plugin for MoonlyRenderPlugin {
             .add_plugins(ExtractComponentPlugin::<surface::MoonlySurfaceUniform>::default())
             .add_plugins(ExtractComponentPlugin::<MoonlyCamera>::default())
             .add_plugins(ExtractComponentPlugin::<MoonlyDebugView>::default())
+            .add_plugins(ExtractComponentPlugin::<MoonlyExternalFog>::default())
             .add_plugins(ExtractComponentPlugin::<MoonlyLinearOutput>::default())
+            .add_plugins(ExtractComponentPlugin::<MoonlyPostSettings>::default())
+            .add_plugins(ExtractComponentPlugin::<settings::MoonlyExposure>::default())
             .add_plugins(
                 BinnedRenderPhasePlugin::<MoonlyOpaque3d, MeshPipeline>::new(
                     RenderDebugFlags::default(),
@@ -138,13 +149,14 @@ impl Plugin for MoonlyRenderPlugin {
                 ),
             );
         if app.world().contains_resource::<EmbeddedAssetRegistry>() {
+            load_shader_library!(app, "lighting.wesl");
+            load_shader_library!(app, "gbuffer_surface.wesl");
             embedded_asset!(app, "gbuffer.wesl");
             embedded_asset!(app, "ao.wesl");
             embedded_asset!(app, "bloom.wesl");
             embedded_asset!(app, "combine.wesl");
             embedded_asset!(app, "depth_copy.wesl");
             embedded_asset!(app, "post.wesl");
-            embedded_asset!(app, "luminance.wesl");
             embedded_asset!(app, "volumetrics.wesl");
             embedded_asset!(app, "froxel.wesl");
             embedded_asset!(app, "accum_spot.wesl");
@@ -155,7 +167,6 @@ impl Plugin for MoonlyRenderPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-        render_app.insert_resource(luminance_sender);
         render_app.insert_resource(gpu_timing_sender);
         configure_render_app(render_app);
     }
@@ -165,6 +176,10 @@ fn configure_render_app(render_app: &mut SubApp) {
     render_app
         .add_schedule(graph::base_schedule())
         .add_systems(MoonlyRender, render_passes::render_systems())
+        .add_systems(
+            Render,
+            settings::neutralize_view_exposure.before(bevy::render::view::prepare_view_uniforms),
+        )
         .add_systems(
             ExtractSchedule,
             (
@@ -184,9 +199,7 @@ fn configure_render_app(render_app: &mut SubApp) {
                 froxel_pass::init_froxel_texture,
                 froxel_pass::init_froxel_pipeline,
                 post::init_post_pipeline,
-                luminance::init_luminance_pipeline,
                 volumetrics::init_volumetric_pipeline,
-                material_lut::init_moonly_material_lut_texture,
                 surface::init_surface_layout,
                 jitter::init_jitter_texture,
                 projector::init_fallback_projector,
@@ -211,7 +224,6 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                     .after(bevy::core_pipeline::core_3d::prepare_core_3d_depth_textures),
                 depth_copy::prepare_depth_copy_bind_groups,
                 transmission::prepare_transmission_textures,
-                luminance::prepare_luminance_targets,
                 shadow_targets::prepare_spot_shadow_targets,
                 minmax::prepare_minmax_bind_groups,
                 ao::prepare_ao_bind_groups,
@@ -224,7 +236,6 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                 combine::prepare_combine_pipelines,
                 post::prepare_post_bind_groups,
                 post::prepare_post_pipelines,
-                luminance::prepare_luminance_bind_groups,
                 bloom::prepare_bloom_bind_groups,
             )
                 .chain()
@@ -272,8 +283,9 @@ mod tests {
     fn plugin_builds_without_a_render_app() {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, MoonlyRenderPlugin));
-        app.world_mut().spawn(MoonlyCamera::default());
+        let camera = app.world_mut().spawn(MoonlyCamera::default()).id();
         app.update();
         assert!(app.world().contains_resource::<MoonlyGpuDiagnostics>());
+        assert!(app.world().get::<Exposure>(camera).is_some());
     }
 }

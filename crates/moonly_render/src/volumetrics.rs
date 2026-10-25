@@ -194,7 +194,10 @@ fn create_volumetric_bind_group(
 }
 
 pub(crate) fn render_volumetrics(
-    view: ViewQuery<(&MoonlyViewTargets, &ViewVolumetricBindGroup), With<MoonlyCamera>>,
+    view: ViewQuery<
+        (&MoonlyViewTargets, &ViewVolumetricBindGroup),
+        (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+    >,
     cache: Res<PipelineCache>,
     pipeline: Res<MoonlyVolumetricPipeline>,
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,

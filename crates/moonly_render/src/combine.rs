@@ -205,13 +205,14 @@ pub(crate) fn prepare_combine_bind_groups(
             .depth_only_view()
             .unwrap_or(&targets.depth.texture.default_view);
         let clip_from_world = view.clip_from_view * view.world_from_view.to_matrix().inverse();
-        let mut environment = UniformBuffer::from(MoonlyEnvironmentUniform::new(
+        let environment_data = MoonlyEnvironmentUniform::new(
             &inputs.environment,
             clip_from_world,
             &inputs.config,
             &inputs.ao_settings,
             view.world_from_view.translation(),
-        ));
+        );
+        let mut environment = UniformBuffer::from(environment_data);
         environment.write_buffer(&inputs.device, &inputs.queue);
         let bind_group = inputs.device.create_bind_group(
             Some("moonly_combine_bind_group"),

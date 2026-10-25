@@ -1,16 +1,16 @@
+import package::lighting::moonly_brdf;
+
 @group(0) @binding(0) var position_texture: texture_2d<f32>;
 @group(0) @binding(1) var normal_texture: texture_2d<f32>;
 @group(0) @binding(2) var albedo_gloss_texture: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> sun: MoonlySunUniform;
-@group(0) @binding(4) var material_lut: texture_3d<f32>;
-@group(0) @binding(5) var material_sampler: sampler;
-@group(0) @binding(6) var shadow_near: texture_depth_2d;
-@group(0) @binding(7) var shadow_middle: texture_depth_2d;
-@group(0) @binding(8) var shadow_far: texture_depth_2d;
-@group(0) @binding(9) var shadow_sampler: sampler_comparison;
-@group(0) @binding(10) var near_minmax: texture_2d<f32>;
-@group(0) @binding(11) var jitter_texture: texture_2d_array<f32>;
-@group(0) @binding(12) var jitter_sampler: sampler;
+@group(0) @binding(4) var shadow_near: texture_depth_2d;
+@group(0) @binding(5) var shadow_middle: texture_depth_2d;
+@group(0) @binding(6) var shadow_far: texture_depth_2d;
+@group(0) @binding(7) var shadow_sampler: sampler_comparison;
+@group(0) @binding(8) var near_minmax: texture_2d<f32>;
+@group(0) @binding(9) var jitter_texture: texture_2d_array<f32>;
+@group(0) @binding(10) var jitter_sampler: sampler;
 
 struct MoonlySunUniform {
     view_position: vec4<f32>,
@@ -41,15 +41,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(normal_sample.xyz);
     let light_direction = normalize(-sun.direction_bias.xyz);
     let view_direction = normalize(sun.view_position.xyz - position.xyz);
-    let half_direction = normalize(light_direction + view_direction);
-    let ld = max(dot(normal, light_direction), 0.0);
-    let ls = max(dot(normal, half_direction), 0.0);
-    let response = textureSampleLevel(
-        material_lut,
-        material_sampler,
-        vec3(ld, ls, normal_sample.w),
-        0.0,
-    ).rg;
     let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     let view_depth = dot(position.xyz - sun.view_position.xyz, sun.view_forward.xyz);
     if view_depth >= sun.splits_far.z {
@@ -81,9 +72,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             in.position.xy,
         );
     }
-    let diffuse = albedo_gloss.rgb * response.x;
-    let specular = vec3(response.y * albedo_gloss.a);
-    return vec4(sun.color.rgb * (diffuse + specular) * visibility, 1.0);
+    let surface = moonly_brdf(
+        normal,
+        view_direction,
+        light_direction,
+        albedo_gloss.rgb,
+        normal_sample.w,
+        albedo_gloss.a,
+    );
+    return vec4(sun.color.rgb * surface * visibility, 1.0);
 }
 
 fn cascade_visibility(

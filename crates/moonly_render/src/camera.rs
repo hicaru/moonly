@@ -1,6 +1,9 @@
 use bevy::{
-    camera::Hdr,
-    core_pipeline::schedule::Core3d,
+    camera::{Exposure, Hdr},
+    core_pipeline::{
+        prepass::DeferredPrepass, schedule::Core3d,
+        tonemapping::{DebandDither, Tonemapping},
+    },
     ecs::{lifecycle::HookContext, query::QueryItem, world::DeferredWorld},
     pbr::ScreenSpaceTransmission,
     prelude::*,
@@ -28,11 +31,14 @@ pub enum MoonlyCameraRole {
 #[component(on_insert = on_insert_moonly_camera, on_remove = on_remove_moonly_camera)]
 #[require(
     Camera3d,
+    Exposure,
     Hdr,
     CameraRenderGraph = CameraRenderGraph::new(MoonlyRender),
     Msaa = Msaa::Off,
     NoIndirectDrawing,
     ScreenSpaceTransmission,
+    DeferredPrepass,
+    Tonemapping = Tonemapping::None,
     MoonlyDebugView
 )]
 pub struct MoonlyCamera {
@@ -44,7 +50,12 @@ fn on_insert_moonly_camera(mut world: DeferredWorld, context: HookContext) {
     world
         .commands()
         .entity(context.entity)
-        .insert((CameraRenderGraph::new(MoonlyRender), Msaa::Off));
+        .insert((
+            CameraRenderGraph::new(MoonlyRender),
+            Msaa::Off,
+            Tonemapping::None,
+            DebandDither::Disabled,
+        ));
 }
 
 fn on_remove_moonly_camera(mut world: DeferredWorld, context: HookContext) {
@@ -133,6 +144,25 @@ impl SyncComponent<RenderApp> for MoonlyLinearOutput {
 }
 
 impl ExtractComponent<RenderApp> for MoonlyLinearOutput {
+    type QueryData = &'static Self;
+    type QueryFilter = With<MoonlyCamera>;
+    type Out = Self;
+
+    fn extract_component(item: QueryItem<Self::QueryData>) -> Option<Self::Out> {
+        Some(*item)
+    }
+}
+
+/// Disable built-in Moonly volumetrics when another fog plugin owns the camera.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
+#[reflect(Component)]
+pub struct MoonlyExternalFog;
+
+impl SyncComponent<RenderApp> for MoonlyExternalFog {
+    type Target = Self;
+}
+
+impl ExtractComponent<RenderApp> for MoonlyExternalFog {
     type QueryData = &'static Self;
     type QueryFilter = With<MoonlyCamera>;
     type Out = Self;

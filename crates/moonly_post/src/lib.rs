@@ -1,7 +1,6 @@
-//! HDR10 tonemapping, eye adaptation, Karis bloom, lens flare, and optic modes for Moonly.
+//! HDR10 tonemapping, Karis bloom, lens flare, and optic modes for Moonly.
 
 pub mod bloom_flare;
-pub mod luminance;
 pub mod material;
 pub mod optics;
 pub mod tonemap;
@@ -14,10 +13,6 @@ pub use crate::{
         BLOOM_GAUSS_BASE_SIGMA, BLOOM_GAUSS_DETAIL_SIGMA, calc_gauss_dual_wave,
         evaluate_lens_flare_ghost, karis_box4_average, karis_downsample_13, karis_group5_average,
         karis_weight,
-    },
-    luminance::{
-        DEFAULT_MIDDLE_GRAY, LUMINANCE_HISTORY_BLEND, LUMINANCE_HISTORY_KEEP,
-        LuminanceAdaptationState, update_luminance_adaptation,
     },
     material::{
         CoreLightingRes, MoonlyLitMaterial, MoonlyLitUniform, PostLightingRes,
@@ -39,7 +34,7 @@ pub const BLOOM_OPTICS_WESL_SOURCE: &str = include_str!("bloom_optics.wesl");
 /// Raw WESL source for `moonly_lit.wesl`.
 pub const MOONLY_LIT_WESL_SOURCE: &str = include_str!("moonly_lit.wesl");
 
-/// Plugin that registers HDR10 tonemapping, luminance adaptation, bloom, optics, and `MoonlyLitMaterial`.
+/// Plugin that registers HDR10 tonemapping, bloom, optics, and `MoonlyLitMaterial`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MoonlyPostPlugin;
 
@@ -59,13 +54,10 @@ impl Plugin for MoonlyPostPlugin {
         }
         app.register_type::<TonemapOperator>()
             .register_type::<Hdr10PostConfig>()
-            .register_type::<LuminanceAdaptationState>()
             .register_type::<OpticsMode>()
             .register_type::<MoonlyLitUniform>()
             .init_resource::<Hdr10PostConfig>()
-            .init_resource::<LuminanceAdaptationState>()
-            .init_resource::<OpticsMode>()
-            .add_systems(Update, update_luminance_adaptation);
+            .init_resource::<OpticsMode>();
     }
 }
 

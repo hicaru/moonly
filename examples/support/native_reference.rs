@@ -1,12 +1,12 @@
 use bevy::{
-    camera::{RenderTarget, visibility::RenderLayers},
+    camera::{Exposure, RenderTarget, visibility::RenderLayers},
     pbr::DistanceFog,
     prelude::*,
     render::{camera::CameraRenderGraph, render_resource::TextureFormat},
 };
 use moonly_core::{MoonlyLight, MoonlyLightFlags, MoonlyLightType};
 use moonly_gi::MoonlyGlow;
-use moonly_render::{MoonlyCamera, MoonlyCameraRole, MoonlyRender};
+use moonly_render::{MoonlyCamera, MoonlyCameraRole, MoonlyLinearOutput, MoonlyRender};
 
 use super::{
     CAPTURE_HEIGHT, CAPTURE_WIDTH,
@@ -40,7 +40,7 @@ pub(crate) fn setup_offscreen_capture(
     let image = images.add(Image::new_target_texture(
         CAPTURE_WIDTH,
         CAPTURE_HEIGHT,
-        TextureFormat::Rgba8UnormSrgb,
+        TextureFormat::Rgba16Float,
         None,
     ));
     options.offscreen = Some(OffscreenCapture(image.clone()));
@@ -48,10 +48,14 @@ pub(crate) fn setup_offscreen_capture(
         MoonlyCamera::default(),
         debug_view_from_args(),
         Camera::default(),
+        Exposure { ev100: 0.0 },
         RenderTarget::Image(image.clone().into()),
         CameraRenderGraph::new(MoonlyRender),
         Transform::from_xyz(5.5, 4.5, 7.5).looking_at(Vec3::new(0.0, 0.8, 0.0), Vec3::Y),
     ));
+    if std::env::args().any(|arg| arg == "--linear") {
+        camera.insert(MoonlyLinearOutput);
+    }
     if std::env::args().any(|arg| arg == "--fog" || arg == "--fog-transparent") {
         camera.insert(DistanceFog::default());
     }

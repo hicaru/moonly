@@ -69,6 +69,7 @@ impl SpecializedMeshPipeline for MoonlyMeshPipeline {
         }
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader = self.shader.clone();
+            fragment.shader_defs.push("MOONLY_GBUFFER".into());
             fragment.targets = gbuffer_targets();
         }
         descriptor.layout.push(self.surface_layout.clone());

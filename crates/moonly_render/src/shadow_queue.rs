@@ -1,7 +1,9 @@
 use std::{any::TypeId, collections::HashMap};
 
 use bevy::{
-    core_pipeline::prepass::{OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey},
+    core_pipeline::prepass::{
+        MotionVectorPrepass, OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey,
+    },
     ecs::system::SystemParam,
     material::{
         RenderPhaseType,
@@ -29,9 +31,9 @@ use bevy::{
 
 use crate::{
     camera::MoonlyCamera,
-    mesh_bind_groups::DrawMoonlyMeshDirect,
+    mesh_bind_groups::{DrawMoonlyMeshDirect, SetMoonlyMotionMeshBindGroup},
     phase::MoonlyShadow3d,
-    shadow_bind_groups::SetMoonlyShadowMeshBindGroup,
+    shadow_bind_groups::{CullMoonlyShadow, SetMoonlyShadowMeshBindGroup},
     shadow_pipeline::{
         MoonlyShadowMeshPipeline, MoonlyShadowPipeline, SetMoonlyShadowViewBindGroup,
     },
@@ -42,7 +44,9 @@ pub(crate) type DrawMoonlyShadow = (
     SetPrepassViewBindGroup<0>,
     SetPrepassViewBindGroup<1>,
     SetMoonlyShadowViewBindGroup<4>,
+    CullMoonlyShadow,
     SetMoonlyShadowMeshBindGroup<2>,
+    SetMoonlyMotionMeshBindGroup<2>,
     SetMaterialBindGroup<3>,
     DrawMoonlyMeshDirect,
 );
@@ -61,14 +65,19 @@ pub(crate) struct ShadowQueueResources<'w> {
     pipeline: Res<'w, MoonlyShadowPipeline>,
 }
 
+type ViewQuery = (
+    &'static ExtractedView,
+    &'static RenderVisibleEntities,
+    Has<MotionVectorPrepass>,
+);
+
 #[derive(SystemParam)]
 pub(crate) struct ShadowViewQueues<'w, 's> {
     pipelines: ResMut<'w, SpecializedMeshPipelines<MoonlyShadowMeshPipeline>>,
     phases: ResMut<'w, ViewBinnedRenderPhases<MoonlyShadow3d>>,
     draws: Res<'w, DrawFunctions<MoonlyShadow3d>>,
     queued: ResMut<'w, MoonlyShadowQueuedEntities>,
-    views:
-        Query<'w, 's, (&'static ExtractedView, &'static RenderVisibleEntities), With<MoonlyCamera>>,
+    views: Query<'w, 's, ViewQuery, With<MoonlyCamera>>,
 }
 
 struct ShadowQueueContext<'a, 'w> {
@@ -77,11 +86,12 @@ struct ShadowQueueContext<'a, 'w> {
     phase: &'a mut BinnedRenderPhase<MoonlyShadow3d>,
     queued: &'a mut MainEntityHashSet,
     draw: bevy::render::render_phase::DrawFunctionId,
+    motion_vectors: bool,
 }
 
 pub(crate) fn queue_shadow_meshes(resources: ShadowQueueResources, mut queues: ShadowViewQueues) {
     let draw = queues.draws.read().id::<DrawMoonlyShadow>();
-    for (view, visible) in &queues.views {
+    for (view, visible, motion_vectors) in &queues.views {
         let key = view.retained_view_entity;
         let Some(phase) = queues.phases.get_mut(&key) else {
             continue;
@@ -96,6 +106,7 @@ pub(crate) fn queue_shadow_meshes(resources: ShadowQueueResources, mut queues: S
             phase,
             queued,
             draw,
+            motion_vectors,
         };
         let Some(entities) = visible.get::<Mesh3d>() else {
             continue;
@@ -150,7 +161,8 @@ fn queue_shadow_entity(
         | MeshPipelineKey::DEPTH_PREPASS
         | MeshPipelineKey::from_bits_retain(mesh.key_bits.bits())
         | material.properties.mesh_pipeline_key_bits.downcast()
-        | alpha_mode_pipeline_key(material.properties.alpha_mode, &Msaa::Off);
+        | alpha_mode_pipeline_key(material.properties.alpha_mode, &Msaa::Off)
+        | crate::motion_vectors::pipeline_key(context.motion_vectors, mesh_instance.flags());
     let key = ErasedMaterialPipelineKey {
         type_id: material_instance.asset_id.type_id(),
         mesh_key: ErasedMeshPipelineKey::new(mesh_key),

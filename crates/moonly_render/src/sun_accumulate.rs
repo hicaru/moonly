@@ -12,7 +12,7 @@ use bevy::{
             PipelineCache, RenderPassDescriptor, RenderPipelineDescriptor, Sampler,
             SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, TextureSampleType,
             UniformBuffer,
-            binding_types::{sampler, texture_2d, texture_2d_array, texture_3d, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_2d_array, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::ExtractedView,
@@ -22,7 +22,6 @@ use moonly_core::{LightPackage, MoonlyLight, MoonlySunCascade};
 
 use crate::{
     camera::MoonlyCamera,
-    material_lut::MoonlyMaterialLutTexture,
     projector::MoonlyFallbackProjector,
     shadow_targets::MoonlySpotShadowTarget,
     view_targets::{GBUFFER_FORMAT, MoonlyViewTargets},
@@ -151,8 +150,6 @@ fn sun_bind_group_layout() -> BindGroupLayoutDescriptor {
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 uniform_buffer::<MoonlySunUniform>(false),
-                texture_3d(TextureSampleType::Float { filterable: true }),
-                sampler(SamplerBindingType::Filtering),
                 texture_2d(TextureSampleType::Depth),
                 texture_2d(TextureSampleType::Depth),
                 texture_2d(TextureSampleType::Depth),
@@ -180,7 +177,6 @@ pub(crate) struct SunPrepareInputs<'w> {
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlySunPipeline>,
     cascades: Res<'w, moonly_core::MoonlySunPackage>,
-    lut: Res<'w, MoonlyMaterialLutTexture>,
     fallback: Res<'w, MoonlyFallbackProjector>,
     jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
 }
@@ -245,8 +241,6 @@ fn create_sun_bind_group(
                 &targets.normal.texture.default_view,
                 &targets.albedo_gloss.texture.default_view,
                 &uniform,
-                &inputs.lut.view,
-                &inputs.lut.sampler,
                 &near.depth.texture.default_view,
                 &middle.depth.texture.default_view,
                 &far.depth.texture.default_view,

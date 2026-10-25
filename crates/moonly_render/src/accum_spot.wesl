@@ -1,15 +1,15 @@
+import package::lighting::moonly_brdf;
+
 @group(0) @binding(0) var position_texture: texture_2d<f32>;
 @group(0) @binding(1) var normal_texture: texture_2d<f32>;
 @group(0) @binding(2) var albedo_gloss_texture: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> spot: MoonlySpotUniform;
-@group(0) @binding(4) var material_lut: texture_3d<f32>;
-@group(0) @binding(5) var material_sampler: sampler;
-@group(0) @binding(6) var shadow_atlas: texture_depth_2d;
-@group(0) @binding(7) var shadow_sampler: sampler_comparison;
-@group(0) @binding(8) var projector_texture: texture_2d<f32>;
-@group(0) @binding(9) var projector_sampler: sampler;
-@group(0) @binding(10) var jitter_texture: texture_2d_array<f32>;
-@group(0) @binding(11) var jitter_sampler: sampler;
+@group(0) @binding(4) var shadow_atlas: texture_depth_2d;
+@group(0) @binding(5) var shadow_sampler: sampler_comparison;
+@group(0) @binding(6) var projector_texture: texture_2d<f32>;
+@group(0) @binding(7) var projector_sampler: sampler;
+@group(0) @binding(8) var jitter_texture: texture_2d_array<f32>;
+@group(0) @binding(9) var jitter_sampler: sampler;
 
 struct MoonlySpotUniform {
     position_range: vec4<f32>,
@@ -37,6 +37,18 @@ fn vertex(@location(0) local_position: vec3<f32>) -> SpotVertexOutput {
     return out;
 }
 
+fn light_attenuation(distance_to_light: f32) -> f32 {
+    if spot.color.a < 0.5 {
+        let attenuation = clamp(1.0 - distance_to_light / spot.position_range.w, 0.0, 1.0);
+        return attenuation * attenuation;
+    }
+    let distance_squared = distance_to_light * distance_to_light;
+    let inverse_range_squared = 1.0 / max(spot.position_range.w * spot.position_range.w, 0.0001);
+    let factor = distance_squared * inverse_range_squared;
+    let smooth_factor = clamp(1.0 - factor * factor, 0.0, 1.0);
+    return smooth_factor * smooth_factor / max(distance_squared, 0.0001);
+}
+
 @fragment
 fn mask_fragment() -> @location(0) vec4<f32> {
     return vec4(0.0);
@@ -51,17 +63,23 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     }
     let to_light = spot.position_range.xyz - position.xyz;
     let distance_to_light = length(to_light);
-    if distance_to_light >= spot.position_range.w || distance_to_light <= 0.0001 {
+    if distance_to_light >= spot.position_range.w {
         return vec4(0.0);
     }
-    let light_direction = to_light / distance_to_light;
+    let light_direction = to_light / max(distance_to_light, 0.0001);
     let cone_cos = dot(-light_direction, normalize(spot.direction_cos.xyz));
     let reference_cone = smoothstep(
         spot.direction_cos.w,
         min(spot.direction_cos.w + 0.15, 1.0),
         cone_cos,
     );
-    let native_cone = smoothstep(spot.volumetric.w, spot.direction_cos.w, cone_cos);
+    let cone_scale = 1.0 / max(spot.volumetric.w - spot.direction_cos.w, 0.0001);
+    let native_attenuation = clamp(
+        cone_cos * cone_scale - spot.direction_cos.w * cone_scale,
+        0.0,
+        1.0,
+    );
+    let native_cone = native_attenuation * native_attenuation;
     let spot_cone = select(reference_cone, native_cone, spot.volumetric.w >= 0.0);
     let cone = select(spot_cone, 1.0, spot.direction_cos.w < -0.999);
     if cone <= 0.0 {
@@ -72,22 +90,18 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(normal_sample.xyz);
     let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     let view_direction = normalize(spot.view_position.xyz - position.xyz);
-    let half_direction = normalize(light_direction + view_direction);
-    let ld = max(dot(normal, light_direction), 0.0);
-    let ls = max(dot(normal, half_direction), 0.0);
-    let response = textureSampleLevel(
-        material_lut,
-        material_sampler,
-        vec3<f32>(ld, ls, normal_sample.w),
-        0.0,
-    ).rg;
-    let attenuation = clamp(1.0 - distance_to_light / spot.position_range.w, 0.0, 1.0);
-    let diffuse = albedo_gloss.rgb * response.x;
-    let specular = vec3<f32>(response.y * albedo_gloss.a);
+    let surface = moonly_brdf(
+        normal,
+        view_direction,
+        light_direction,
+        albedo_gloss.rgb,
+        normal_sample.w,
+        albedo_gloss.a,
+    );
     let projection = projector_color(position.xyz);
-    let radiance = spot.color.rgb * projection * (cone * attenuation * attenuation);
+    let radiance = spot.color.rgb * projection * (cone * light_attenuation(distance_to_light));
     let visibility = shadow_visibility(position.xyz, in.position.xy);
-    return vec4(radiance * (diffuse + specular) * visibility, 1.0);
+    return vec4(radiance * surface * visibility, 1.0);
 }
 
 fn shadow_visibility(world_position: vec3<f32>, screen_xy: vec2<f32>) -> f32 {
@@ -156,10 +170,9 @@ fn local_scattering(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32
         1.0,
         spot.direction_cos.w < -0.999,
     );
-    let attenuation = 1.0 - distance / spot.position_range.w;
     let visibility = shadow_visibility(world_position, screen_xy);
     return spot.color.rgb * projector_color(world_position)
-        * cone * attenuation * attenuation * visibility;
+        * cone * light_attenuation(distance) * visibility;
 }
 
 @fragment

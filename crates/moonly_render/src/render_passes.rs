@@ -1,4 +1,5 @@
 use bevy::{
+    core_pipeline::core_3d::main_opaque_pass_3d,
     ecs::{schedule::IntoScheduleConfigs, system::ScheduleSystem},
     pbr::{
         allocate_uniforms, early_gpu_preprocess, late_gpu_preprocess, main_transmissive_pass_3d,
@@ -9,8 +10,7 @@ use bevy::{
 use crate::{
     ao, bloom, combine, depth_copy, forward, froxel_pass, gpu_timer,
     graph::{self, MoonlyRenderSystems},
-    local_volumetrics, luminance, minmax, occlusion, post, shadow, sun_accumulate, sun_shadow,
-    volumetrics,
+    local_volumetrics, minmax, occlusion, post, shadow, sun_accumulate, sun_shadow, volumetrics,
 };
 
 pub(crate) fn render_systems() -> impl IntoScheduleConfigs<ScheduleSystem, ()> {
@@ -35,10 +35,11 @@ pub(crate) fn render_systems() -> impl IntoScheduleConfigs<ScheduleSystem, ()> {
         )
             .chain()
             .in_set(MoonlyRenderSystems::DeferredPass),
-        main_transmissive_pass_3d.in_set(MoonlyRenderSystems::TransmissivePass),
+        (main_opaque_pass_3d, main_transmissive_pass_3d)
+            .chain()
+            .in_set(MoonlyRenderSystems::TransmissivePass),
         forward::render_transparent.in_set(MoonlyRenderSystems::MainPass),
         (
-            luminance::render_luminance,
             bloom::render_bloom,
             post::render_post,
             gpu_timer::resolve_gpu_timings,

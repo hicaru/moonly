@@ -1,11 +1,13 @@
 #[allow(dead_code)]
 mod support;
 
-use bevy::{app::AppExit, prelude::*, render::camera::CameraRenderGraph, window::WindowResolution};
+use bevy::{
+    app::AppExit, camera::Exposure, prelude::*, render::camera::CameraRenderGraph,
+    window::WindowResolution,
+};
 use moonly_core::{AmbientOcclusionMode, LightPackage, MoonlyConfig, MoonlyCorePlugin};
 use moonly_cull::MoonlyCullPlugin;
 use moonly_gi::MoonlyGiPlugin;
-use moonly_post::LuminanceAdaptationState;
 use moonly_render::{
     GpuTiming, MoonlyCamera, MoonlyDebugView, MoonlyGpuDiagnostics, MoonlyLinearOutput, MoonlyPass,
     MoonlyRender, MoonlyRenderPlugin,
@@ -87,18 +89,15 @@ fn main() -> AppExit {
 }
 
 fn report_exposure_probe(
-    state: Res<LuminanceAdaptationState>,
+    cameras: Query<&Exposure, With<MoonlyCamera>>,
     package: Res<LightPackage>,
     mut frame: Local<u32>,
 ) {
     *frame += 1;
     if *frame == 45 && std::env::args().any(|arg| arg == "--exposure-probe") {
-        info!(
-            "Measured luminance {:.6}, adapted {:.6}, exposure {:.6}",
-            state.target_luminance,
-            state.adapted_luminance,
-            state.compute_exposure_scale()
-        );
+        for exposure in &cameras {
+            info!("Camera EV100 {:.6}", exposure.ev100);
+        }
         info!(
             "Lights: point {}, spot {}, shadowed {}, direct {}",
             package.v_point.len(),

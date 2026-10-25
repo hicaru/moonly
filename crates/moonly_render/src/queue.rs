@@ -2,7 +2,9 @@ use std::{any::TypeId, collections::HashMap};
 
 use bevy::{
     asset::{AssetId, Handle},
-    core_pipeline::prepass::{OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey},
+    core_pipeline::prepass::{
+        MotionVectorPrepass, OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey,
+    },
     ecs::system::SystemParam,
     material::{
         RenderPhaseType,
@@ -56,8 +58,15 @@ pub(crate) struct MoonlyQueueResources<'w> {
     prepass: Res<'w, PrepassPipeline>,
     pipeline_cache: Res<'w, PipelineCache>,
     shader: Res<'w, MoonlyGBufferShader>,
+    adapters: Res<'w, crate::MoonlyMaterialAdapters>,
     surface_layout: Res<'w, crate::surface::MoonlySurfaceLayout>,
 }
+
+type ViewQuery = (
+    &'static ExtractedView,
+    &'static RenderVisibleEntities,
+    Has<MotionVectorPrepass>,
+);
 
 #[derive(SystemParam)]
 pub(crate) struct MoonlyViewQueues<'w, 's> {
@@ -67,8 +76,7 @@ pub(crate) struct MoonlyViewQueues<'w, 's> {
     opaque_draws: Res<'w, DrawFunctions<MoonlyOpaque3d>>,
     alpha_draws: Res<'w, DrawFunctions<MoonlyAlphaMask3d>>,
     queued: ResMut<'w, MoonlyQueuedEntities>,
-    views:
-        Query<'w, 's, (&'static ExtractedView, &'static RenderVisibleEntities), With<MoonlyCamera>>,
+    views: Query<'w, 's, ViewQuery, With<MoonlyCamera>>,
 }
 
 struct QueueViewContext<'a, 'w> {
@@ -79,12 +87,13 @@ struct QueueViewContext<'a, 'w> {
     queued: &'a mut MainEntityHashSet,
     opaque_draw: DrawFunctionId,
     alpha_draw: DrawFunctionId,
+    motion_vectors: bool,
 }
 
 pub(crate) fn queue_moonly_meshes(resources: MoonlyQueueResources, mut queues: MoonlyViewQueues) {
     let opaque_draw = queues.opaque_draws.read().id::<DrawMoonlyMesh>();
     let alpha_draw = queues.alpha_draws.read().id::<DrawMoonlyMesh>();
-    for (view, visible) in &queues.views {
+    for (view, visible, motion_vectors) in &queues.views {
         let key = view.retained_view_entity;
         let (Some(opaque_phase), Some(alpha_phase)) = (
             queues.opaque_phases.get_mut(&key),
@@ -102,6 +111,7 @@ pub(crate) fn queue_moonly_meshes(resources: MoonlyQueueResources, mut queues: M
             queued,
             opaque_draw,
             alpha_draw,
+            motion_vectors,
         };
         let Some(entities) = visible.get::<Mesh3d>() else {
             continue;
@@ -132,7 +142,9 @@ fn queue_entity(render_entity: Entity, main_entity: MainEntity, context: &mut Qu
     let Some(material_instance) = resources.material_instances.instances.get(&main_entity) else {
         return;
     };
-    if material_instance.asset_id.type_id() != TypeId::of::<StandardMaterial>() {
+    let material_type = material_instance.asset_id.type_id();
+    let adapter = resources.adapters.get(material_type);
+    if material_type != TypeId::of::<StandardMaterial>() && adapter.is_none() {
         return;
     }
     let Some(mesh_instance) = resources.instances.render_mesh_queue_data(main_entity) else {
@@ -144,7 +156,7 @@ fn queue_entity(render_entity: Entity, main_entity: MainEntity, context: &mut Qu
     let Some(material) = resources.materials.get(material_instance.asset_id) else {
         return;
     };
-    if !material_supports_gbuffer(&material.properties) {
+    if !material_supports_gbuffer(&material.properties, adapter.is_some()) {
         return;
     }
     let Some(mesh) = resources.meshes.get(mesh_instance.mesh_asset_id()) else {
@@ -156,16 +168,24 @@ fn queue_entity(render_entity: Entity, main_entity: MainEntity, context: &mut Qu
     else {
         return;
     };
-    let mesh_key = create_mesh_key(main_entity, mesh, &material.properties, resources);
+    let motion_key =
+        crate::motion_vectors::pipeline_key(context.motion_vectors, mesh_instance.flags());
+    let mesh_key = create_mesh_key(
+        main_entity,
+        mesh,
+        &material.properties,
+        resources,
+        motion_key,
+    );
     let key = ErasedMaterialPipelineKey {
-        type_id: material_instance.asset_id.type_id(),
+        type_id: material_type,
         mesh_key: ErasedMeshPipelineKey::new(mesh_key),
         material_key: material.properties.material_key.clone(),
     };
     let specializer = MoonlyMeshPipeline::new(
         resources.prepass.clone(),
         &material.properties,
-        resources.shader.0.clone(),
+        adapter.unwrap_or(&resources.shader.0).clone(),
         &resources.surface_layout.0,
     );
     let Ok(pipeline) =
@@ -192,8 +212,11 @@ fn queue_entity(render_entity: Entity, main_entity: MainEntity, context: &mut Qu
     context.queued.insert(main_entity);
 }
 
-const fn material_supports_gbuffer(properties: &bevy::material::MaterialProperties) -> bool {
-    properties.prepass_enabled
+const fn material_supports_gbuffer(
+    properties: &bevy::material::MaterialProperties,
+    adapted: bool,
+) -> bool {
+    (properties.prepass_enabled || adapted)
         && !properties.reads_view_transmission_texture
         && matches!(
             properties.render_phase_type,
@@ -206,12 +229,14 @@ fn create_mesh_key(
     mesh: &RenderMesh,
     properties: &bevy::material::MaterialProperties,
     resources: &MoonlyQueueResources,
+    motion_key: MeshPipelineKey,
 ) -> MeshPipelineKey {
     let mut key = MeshPipelineKey::from_msaa_samples(1)
         | MeshPipelineKey::DEFERRED_PREPASS
         | MeshPipelineKey::from_bits_retain(mesh.key_bits.bits())
         | properties.mesh_pipeline_key_bits.downcast()
-        | alpha_mode_pipeline_key(properties.alpha_mode, &Msaa::Off);
+        | alpha_mode_pipeline_key(properties.alpha_mode, &Msaa::Off)
+        | motion_key;
     if resources
         .visibility_ranges
         .entity_has_crossfading_visibility_ranges(entity)

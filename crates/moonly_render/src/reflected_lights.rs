@@ -3,7 +3,7 @@ use moonly_core::{MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight
 pub(crate) fn local_light(light: &VirtualGiLight) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Point,
-        flags: MoonlyLightFlags::default(),
+        flags: MoonlyLightFlags::VIRTUAL_GI,
         color: light.color,
         position: light.position,
         direction: light.direction,
@@ -28,6 +28,7 @@ mod tests {
         };
         let local = local_light(&light);
         assert_eq!(local.light_type, MoonlyLightType::Point);
+        assert!(local.flags.contains(MoonlyLightFlags::VIRTUAL_GI));
         assert_eq!(local.color, light.color);
         assert!((local.range - light.range).abs() < f32::EPSILON);
         assert_eq!(local.direction, light.direction);

@@ -25,7 +25,10 @@ pub(crate) struct LocalVolumeRenderInputs<'w> {
 }
 
 pub(crate) fn render_local_volumetrics(
-    view: ViewQuery<(&MoonlyViewTargets, &MoonlySpotBindGroups), With<MoonlyCamera>>,
+    view: ViewQuery<
+        (&MoonlyViewTargets, &MoonlySpotBindGroups),
+        (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+    >,
     inputs: LocalVolumeRenderInputs,
     mut context: RenderContext,
 ) {
