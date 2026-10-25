@@ -1,11 +1,12 @@
 use std::{
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use bevy::{
     ecs::system::SystemParam,
     mesh::{Indices, VertexAttributeValues, skinning::SkinnedMesh},
+    platform::hash::FixedHasher,
     prelude::*,
     render::render_resource::PrimitiveTopology,
 };
@@ -37,6 +38,7 @@ pub struct StaticGiGeometry {
     bvh: GiTriangleBvh,
     revision: u64,
     caster_signature: u64,
+    caster_count: usize,
     rays_traced: AtomicU64,
 }
 
@@ -70,9 +72,23 @@ impl GiRayGeometry for StaticGiGeometry {
         self.rays_traced.fetch_add(1, Ordering::Relaxed);
         self.bvh.nearest_hit(ray)
     }
+
+    fn any_hit(&self, ray: GiRayQuery) -> bool {
+        self.rays_traced.fetch_add(1, Ordering::Relaxed);
+        self.bvh.any_hit(ray)
+    }
 }
 
 type CasterFilter = (Without<SkinnedMesh>, Without<HemisphereTracker>);
+type ChangedCasterFilter = (
+    Without<SkinnedMesh>,
+    Without<HemisphereTracker>,
+    Or<(
+        Changed<Mesh3d>,
+        Changed<GlobalTransform>,
+        Changed<MoonlyGiCaster>,
+    )>,
+);
 type CasterComponents = (
     Entity,
     &'static Mesh3d,
@@ -80,11 +96,13 @@ type CasterComponents = (
     &'static MoonlyGiCaster,
 );
 type CasterQuery<'w, 's> = Query<'w, 's, CasterComponents, CasterFilter>;
+type ChangedCasterQuery<'w, 's> = Query<'w, 's, (), ChangedCasterFilter>;
 
 #[derive(SystemParam)]
 pub(crate) struct GiGeometryInputs<'w, 's> {
     meshes: Option<Res<'w, Assets<Mesh>>>,
     casters: CasterQuery<'w, 's>,
+    changed_casters: ChangedCasterQuery<'w, 's>,
 }
 
 /// Rebuild static triangle geometry after caster, transform, or mesh changes.
@@ -93,8 +111,18 @@ pub(crate) fn collect_static_gi_geometry(
     mut geometry: ResMut<StaticGiGeometry>,
     mut triangles: Local<Vec<GiTriangle>>,
 ) {
+    let meshes_changed = inputs.meshes.as_ref().is_some_and(Res::is_changed);
+    let current_count = inputs.casters.iter().count();
+    if geometry.revision != 0
+        && !meshes_changed
+        && inputs.changed_casters.is_empty()
+        && current_count == geometry.caster_count
+    {
+        return;
+    }
     let signature = caster_signature(&inputs.casters, inputs.meshes.as_deref());
     if geometry.revision != 0 && signature == geometry.caster_signature {
+        geometry.caster_count = current_count;
         return;
     }
     triangles.clear();
@@ -107,18 +135,20 @@ pub(crate) fn collect_static_gi_geometry(
     }
     geometry.rebuild(&mut triangles);
     geometry.caster_signature = signature;
+    geometry.caster_count = current_count;
 }
 
 fn caster_signature(casters: &CasterQuery, meshes: Option<&Assets<Mesh>>) -> u64 {
     casters
         .iter()
         .fold(0, |combined, (entity, mesh, transform, caster)| {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            let mut hasher = FixedHasher.build_hasher();
             entity.hash(&mut hasher);
             mesh.id().hash(&mut hasher);
             caster.cull_backfaces.hash(&mut hasher);
-            for value in transform.to_matrix().to_cols_array() {
-                value.to_bits().hash(&mut hasher);
+            let cols = transform.to_matrix().to_cols_array();
+            for value in cols {
+                hasher.write_u32(value.to_bits());
             }
             if let Some(asset) = meshes.and_then(|meshes| meshes.get(mesh)) {
                 hash_mesh_geometry(asset, &mut hasher);
@@ -127,6 +157,10 @@ fn caster_signature(casters: &CasterQuery, meshes: Option<&Assets<Mesh>>) -> u64
         })
 }
 
+#[expect(
+    unsafe_code,
+    reason = "`[f32; 3]` has 12 contiguous initialized bytes with no padding."
+)]
 fn hash_mesh_geometry(mesh: &Mesh, hasher: &mut impl Hasher) {
     std::mem::discriminant(&mesh.primitive_topology()).hash(hasher);
     let attribute = mesh.attribute(Mesh::ATTRIBUTE_POSITION);
@@ -135,11 +169,12 @@ fn hash_mesh_geometry(mesh: &Mesh, hasher: &mut impl Hasher) {
         std::mem::discriminant(values).hash(hasher);
     }
     if let Some(VertexAttributeValues::Float32x3(positions)) = attribute {
-        for position in positions {
-            for value in position {
-                value.to_bits().hash(hasher);
-            }
-        }
+        hasher.write_usize(positions.len());
+        // SAFETY: `[f32; 3]` is 12 contiguous initialized bytes with no padding.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(positions.as_ptr().cast::<u8>(), positions.len() * 12)
+        };
+        hasher.write(bytes);
     }
     match mesh.indices() {
         Some(Indices::U16(indices)) => indices.hash(hasher),
