@@ -1,8 +1,11 @@
 //! Night vision, thermal heatvision, and parallax scope optics (`night_vision.h`, `heatvision.ps`, `fakescope.ps`).
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+};
 
-/// Special optic overlay modes ported from `xray-monolith` shaders.
+/// Special optic overlay modes ported from `moonly-monolith` shaders.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 #[reflect(Resource)]
 pub enum OpticsMode {
@@ -30,6 +33,14 @@ impl OpticsMode {
             Self::ThermalHeatVision => 3,
             Self::ParallaxScope => 4,
         }
+    }
+}
+
+impl ExtractResource<RenderApp> for OpticsMode {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        *source
     }
 }
 

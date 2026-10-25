@@ -1,9 +1,9 @@
-// XRay-Monolith R3/R4 shadow filtering, 64x64 jitter rotation, MinMax SM, and PCSS in WESL.
+// Moonly-Monolith R3/R4 shadow filtering, 64x64 jitter rotation, MinMax SM, and PCSS in WESL.
 
 const JITTER_TILE_SIZE: f32 = 64.0;
 const TWO_PI: f32 = 6.283185307179586;
 
-// Procedural 64x64 5-rotation jitter vector matching `TEX_jitter` (`r4_rendertarget.cpp`).
+// Analytical fallback for CPU tests. Deferred GPU passes use R4 SNORM textures.
 fn sample_monolith_jitter(screen_xy: vec2<f32>, rotation_idx: u32) -> vec2<f32> {
     let cell = floor(screen_xy % vec2<f32>(JITTER_TILE_SIZE));
     let phase = f32(rotation_idx) * 1.25663706;

@@ -43,11 +43,11 @@ fn setup_stress(
     for index in 0..12_u32 {
         let angle = index as f32 * std::f32::consts::TAU / 12.0;
         let position = Vec3::new(angle.cos() * 3.0, 2.0 + index as f32 * 0.08, angle.sin());
-        let mut light = XRayLight {
-            flags: XRayLightFlags::GI_ENABLED,
+        let mut light = MoonlyLight {
+            flags: MoonlyLightFlags::GI_ENABLED,
             color: Vec3::new(0.4 + index as f32 * 0.05, 0.7, 1.2),
             range: 8.0,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         };
         light.position = position;
         commands.spawn((
@@ -57,12 +57,12 @@ fn setup_stress(
             GlobalTransform::default(),
         ));
     }
-    let mut direct = XRayLight {
-        light_type: XRayLightType::Direct,
-        flags: XRayLightFlags::GI_ENABLED,
+    let mut direct = MoonlyLight {
+        light_type: MoonlyLightType::Direct,
+        flags: MoonlyLightFlags::GI_ENABLED,
         direction: Vec3::new(-0.4, -0.8, -0.3).normalize(),
         range: 100.0,
-        ..XRayLight::default()
+        ..MoonlyLight::default()
     };
     direct.position = Vec3::ZERO;
     commands.spawn((direct, StressLight(100), Transform::default()));

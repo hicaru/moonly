@@ -7,7 +7,7 @@ max-fn-params-bools = 2
 single-char-binding-names-threshold = 3
 doc-valid-idents = [
     "Bevy", "WGSL", "WESL", "GLTF", "PBR", "RGB", "RGBA", "3D", "2D",
-    "Moonly", "XRay", "GI", "RT", "SSAO", "SSDO", "HDAO", "HBAO", "PCSS",
+    "Moonly", "Moonly", "GI", "RT", "SSAO", "SSDO", "HDAO", "HBAO", "PCSS",
     "RSM", "HOM", "SMAP", "HDR10", "NVG", "PQ", "LogC", "ACES", "AgX",
     "Rec709", "Rec2020", "P3D65", "sRGB", "Kawase", "Karis", "MinMax",
     "BSSF", "MSAA", "NightVision", "HeatVision", "ParallaxScope",

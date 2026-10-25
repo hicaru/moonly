@@ -2,7 +2,7 @@
 
 use bevy::{prelude::*, render::render_resource::ShaderType};
 
-/// Number of `vec4<f32>` uniform slots in the XRay-Monolith shader bus.
+/// Number of `vec4<f32>` uniform slots in the Moonly-Monolith shader bus.
 pub const SHADER_BUS_SLOT_COUNT: usize = 8;
 
 /// GPU-compatible shader bus uniform block (`shader_param_1` through `shader_param_8`).

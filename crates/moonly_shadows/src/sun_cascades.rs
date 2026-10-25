@@ -5,7 +5,7 @@ use moonly_core::SunCascadeConfig;
 
 use crate::spot_xform::{look_to_rh_mat4, orthographic_rh_mat4};
 
-/// Number of sun shadow cascades in `xray-monolith` (`SE_SUN_NEAR`, `SE_SUN_MIDDLE`, `SE_SUN_FAR`).
+/// Number of sun shadow cascades in `moonly-monolith` (`SE_SUN_NEAR`, `SE_SUN_MIDDLE`, `SE_SUN_FAR`).
 pub const SUN_CASCADE_COUNT: usize = 3;
 
 /// Index of the near sun cascade (`SE_SUN_NEAR = 0`).

@@ -1,4 +1,4 @@
-// XRay-Monolith R4 HDR10 tonemapping operators, color spaces, and ST.2084 PQ in WESL (`hdr10.h`).
+// Moonly-Monolith R4 HDR10 tonemapping operators, color spaces, and ST.2084 PQ in WESL (`hdr10.h`).
 
 fn tonemap_reinhard_wp(x: vec3<f32>, wp_sq: f32) -> vec3<f32> {
     let mapped = (x * (vec3<f32>(1.0) + x / wp_sq)) / (x + vec3<f32>(1.0));

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     ".",
     "crates/moonly_core",
+    "crates/moonly_render",
     "crates/moonly_cull",
     "crates/moonly_shadows",
     "crates/moonly_gi",
@@ -24,8 +25,10 @@ bevy = { version = "0.20.0", default-features = false, features = [
 criterion = "0.8.2"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 wesl = "0.3"
+wgpu = "30.0.1"
 
 moonly_core = { path = "crates/moonly_core" }
+moonly_render = { path = "crates/moonly_render" }
 moonly_cull = { path = "crates/moonly_cull" }
 moonly_shadows = { path = "crates/moonly_shadows" }
 moonly_gi = { path = "crates/moonly_gi" }
@@ -44,6 +47,11 @@ name = "lighting"
 path = "benches/lighting.rs"
 harness = false
 
+[[bench]]
+name = "gi"
+path = "benches/gi.rs"
+harness = false
+
 [[example]]
 name = "monolith_showcase"
 path = "examples/monolith_showcase.rs"
@@ -55,6 +63,7 @@ path = "examples/gi_shadows_lab.rs"
 [dependencies]
 bevy.workspace = true
 moonly_core.workspace = true
+moonly_render.workspace = true
 moonly_cull.workspace = true
 moonly_shadows.workspace = true
 moonly_gi.workspace = true

@@ -1,15 +1,18 @@
 //! HDR10 tonemapping operators, color space matrices, ARRI LogC, and ST.2084 PQ (`hdr10.h`).
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+};
 
-/// Classic XRay-Monolith whitepoint constant (`1.7 * 1.7 = 2.89` in `common_functions.h`).
-pub const XRAY_CLASSIC_WHITEPOINT_SQ: f32 = 2.89;
+/// Classic Moonly-Monolith whitepoint constant (`1.7 * 1.7 = 2.89` in `common_functions.h`).
+pub const MOONLY_CLASSIC_WHITEPOINT_SQ: f32 = 2.89;
 
 /// Tonemapping operator selection matching `hdr10.h` and `common_functions.h`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 pub enum TonemapOperator {
-    /// Classic X-Ray Reinhard whitepoint `1.7` (`tonemap` in `common_functions.h`).
-    ClassicXRay,
+    /// Classic Moonly Reinhard whitepoint `1.7` (`tonemap` in `common_functions.h`).
+    ClassicMoonly,
     /// Extended Reinhard with whitepoint `2.0` (`HDR10_Tonemap_ExtendedReinhard_Whitepoint_2`).
     ExtendedReinhardW2,
     /// Extended Reinhard with whitepoint `3.0` (`HDR10_Tonemap_ExtendedReinhard_Whitepoint_3`).
@@ -34,7 +37,7 @@ impl TonemapOperator {
     #[must_use]
     pub const fn shader_index(self) -> u32 {
         match self {
-            Self::ClassicXRay => 0,
+            Self::ClassicMoonly => 0,
             Self::ExtendedReinhardW2 => 1,
             Self::ExtendedReinhardW3 => 2,
             Self::AcesNarkowicz => 3,
@@ -81,12 +84,20 @@ impl Default for Hdr10PostConfig {
     }
 }
 
+impl ExtractResource<RenderApp> for Hdr10PostConfig {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        *source
+    }
+}
+
 /// Evaluate the selected `TonemapOperator` on a linear RGB color (`hdr10.h`).
 #[must_use]
 pub fn evaluate_tonemap_cpu(rgb: Vec3, op: TonemapOperator) -> Vec3 {
     let x = rgb.max(Vec3::ZERO);
     match op {
-        TonemapOperator::ClassicXRay => reinhard_whitepoint(x, XRAY_CLASSIC_WHITEPOINT_SQ),
+        TonemapOperator::ClassicMoonly => reinhard_whitepoint(x, MOONLY_CLASSIC_WHITEPOINT_SQ),
         TonemapOperator::ExtendedReinhardW2 => reinhard_whitepoint(x, 4.0),
         TonemapOperator::ExtendedReinhardW3 => reinhard_whitepoint(x, 9.0),
         TonemapOperator::AcesNarkowicz => aces_narkowicz(x),

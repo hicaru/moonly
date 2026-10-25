@@ -155,7 +155,7 @@ fn spawn_bunker_spheres_and_lights(
     }
 
     commands.spawn((
-        XRayLight::spot(
+        MoonlyLight::spot(
             Vec3::new(-1.2, 4.2, 1.5),
             Vec3::new(0.25, -0.92, -0.28).normalize(),
             Vec3::new(3.4, 2.5, 1.6),
@@ -167,24 +167,24 @@ fn spawn_bunker_spheres_and_lights(
         ExampleLight,
     ));
     commands.spawn((
-        XRayLight {
-            flags: XRayLightFlags::GI_ENABLED,
+        MoonlyLight {
+            flags: MoonlyLightFlags::GI_ENABLED,
             color: Vec3::new(0.5, 0.8, 1.4),
             position: Vec3::new(1.8, 2.4, 1.0),
             range: 10.0,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         },
         Transform::from_xyz(1.8, 2.4, 1.0),
         GlobalTransform::default(),
     ));
     commands.spawn((
-        XRayLight {
-            light_type: XRayLightType::Direct,
-            flags: XRayLightFlags::GI_ENABLED,
+        MoonlyLight {
+            light_type: MoonlyLightType::Direct,
+            flags: MoonlyLightFlags::GI_ENABLED,
             color: Vec3::new(0.18, 0.16, 0.13),
             direction: Vec3::new(-0.4, -0.8, -0.3).normalize(),
             range: 60.0,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         },
         Transform::default().looking_at(Vec3::new(-0.4, -0.8, -0.3), Vec3::Y),
     ));

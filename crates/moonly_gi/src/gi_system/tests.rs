@@ -1,5 +1,5 @@
 use super::*;
-use moonly_core::{MoonlyPipelineTier, XRayLightFlags};
+use moonly_core::{MoonlyLightFlags, MoonlyPipelineTier};
 
 fn floor() -> GiReflectorBox {
     GiReflectorBox::from_center_extents(
@@ -28,17 +28,17 @@ fn generate(config: &MoonlyConfig, package: &LightPackage) -> GiLightField {
 #[test]
 fn unshadowed_point_and_spot_lights_generate_gi() {
     let mut package = LightPackage::default();
-    let mut point = XRayLight {
+    let mut point = MoonlyLight {
         position: Vec3::new(0.0, 2.0, 0.0),
-        flags: XRayLightFlags::GI_ENABLED,
-        ..XRayLight::default()
+        flags: MoonlyLightFlags::GI_ENABLED,
+        ..MoonlyLight::default()
     };
     package.v_point.push(point.clone());
     let field = generate(&config(MoonlyPipelineTier::MonolithR4), &package);
     assert!(!field.virtual_lights.is_empty());
 
     package.v_point.clear();
-    point.light_type = XRayLightType::Spot;
+    point.light_type = MoonlyLightType::Spot;
     point.direction = Vec3::NEG_Y;
     point.right = Vec3::X;
     point.cone_angle = 0.8;
@@ -49,10 +49,10 @@ fn unshadowed_point_and_spot_lights_generate_gi() {
 
 #[test]
 fn split_shadowed_point_matches_one_unshadowed_point() {
-    let point = XRayLight {
+    let point = MoonlyLight {
         position: Vec3::new(0.0, 2.0, 0.0),
-        flags: XRayLightFlags::SHADOW.union(XRayLightFlags::GI_ENABLED),
-        ..XRayLight::default()
+        flags: MoonlyLightFlags::SHADOW.union(MoonlyLightFlags::GI_ENABLED),
+        ..MoonlyLight::default()
     };
     let mut shadowed = LightPackage::default();
     shadowed.push(point.clone());
@@ -75,17 +75,17 @@ fn split_shadowed_point_matches_one_unshadowed_point() {
 #[test]
 fn disabled_and_non_gi_package_lights_do_not_generate() {
     let mut package = LightPackage::default();
-    package.v_point.push(XRayLight {
-        flags: XRayLightFlags::default(),
-        ..XRayLight::default()
+    package.v_point.push(MoonlyLight {
+        flags: MoonlyLightFlags::default(),
+        ..MoonlyLight::default()
     });
     let field = generate(&config(MoonlyPipelineTier::MonolithR4), &package);
     assert!(field.virtual_lights.is_empty());
 
     package.v_point.clear();
-    package.v_point.push(XRayLight {
-        flags: XRayLightFlags::GI_ENABLED,
-        ..XRayLight::default()
+    package.v_point.push(MoonlyLight {
+        flags: MoonlyLightFlags::GI_ENABLED,
+        ..MoonlyLight::default()
     });
     let mut config = config(MoonlyPipelineTier::MonolithR4);
     config.gi.enabled = false;

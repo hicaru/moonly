@@ -1,4 +1,4 @@
-// XRay-Monolith R3/R4 common shader math ported to WESL (`common_functions.h`).
+// Moonly-Monolith R3/R4 common shader math ported to WESL (`common_functions.h`).
 
 const DEF_GLOSS: f32 = 0.25;
 const INV_SQRT_3: f32 = 0.5773502691896258;
@@ -16,7 +16,7 @@ fn u_diffuse2s(rgb: vec3<f32>) -> f32 {
     return length(rgb) * INV_SQRT_3;
 }
 
-fn tonemap_xray(rgb: vec3<f32>, scale: f32) -> vec3<f32> {
+fn tonemap_moonly(rgb: vec3<f32>, scale: f32) -> vec3<f32> {
     let c = rgb * scale;
     return (c * (vec3<f32>(1.0) + c / 2.89)) / (c + vec3<f32>(1.0));
 }

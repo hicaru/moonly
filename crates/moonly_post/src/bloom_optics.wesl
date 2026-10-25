@@ -1,4 +1,4 @@
-// XRay-Monolith R4 Karis bloom, lens flare, NightVision, HeatVision, and ParallaxScope in WESL.
+// Moonly-Monolith R4 Karis bloom, lens flare, NightVision, HeatVision, and ParallaxScope in WESL.
 
 fn karis_weight_wesl(rgb: vec3<f32>) -> f32 {
     let luma = max(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0);

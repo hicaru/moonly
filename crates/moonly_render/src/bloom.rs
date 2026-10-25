@@ -1,0 +1,242 @@
+use bevy::{
+    asset::{AssetServer, load_embedded_asset},
+    core_pipeline::FullscreenShader,
+    ecs::system::SystemParam,
+    prelude::*,
+    render::{
+        diagnostic::RecordDiagnostics,
+        render_resource::{
+            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BlendComponent, BlendFactor, BlendOperation, BlendState, CachedRenderPipelineId,
+            ColorTargetState, ColorWrites, FragmentState, PipelineCache, RenderPassDescriptor,
+            RenderPipeline, RenderPipelineDescriptor, ShaderStages, ShaderType, TextureSampleType,
+            UniformBuffer,
+            binding_types::{texture_2d, uniform_buffer},
+        },
+        renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
+        texture::ColorAttachment,
+    },
+    shader::Shader,
+};
+use moonly_post::Hdr10PostConfig;
+
+use crate::{camera::MoonlyCamera, view_targets::MoonlyViewTargets};
+
+#[derive(Resource)]
+pub(crate) struct MoonlyBloomPipeline {
+    layout: BindGroupLayoutDescriptor,
+    downsample: CachedRenderPipelineId,
+    upsample: CachedRenderPipelineId,
+}
+
+#[derive(Component)]
+pub(crate) struct ViewBloomBindGroups([BindGroup; 5]);
+
+#[derive(ShaderType)]
+struct MoonlyBloomUniform {
+    input_size: Vec2,
+    output_size: Vec2,
+    mode: UVec4,
+}
+
+pub(crate) fn init_bloom_pipeline(
+    mut commands: Commands,
+    fullscreen: Res<FullscreenShader>,
+    asset_server: Res<AssetServer>,
+    cache: Res<PipelineCache>,
+) {
+    let layout = BindGroupLayoutDescriptor::new(
+        "moonly_bloom_layout",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d(TextureSampleType::Float { filterable: false }),
+                uniform_buffer::<MoonlyBloomUniform>(false),
+            ),
+        ),
+    );
+    let shader = load_embedded_asset!(asset_server.as_ref(), "bloom.wesl");
+    let context = BloomPipelineContext {
+        layout: &layout,
+        fullscreen: &fullscreen,
+        cache: &cache,
+        shader: &shader,
+    };
+    let downsample = bloom_pipeline(context, "downsample", false);
+    let upsample = bloom_pipeline(context, "upsample", true);
+    commands.insert_resource(MoonlyBloomPipeline {
+        layout,
+        downsample,
+        upsample,
+    });
+}
+
+#[derive(Clone, Copy)]
+struct BloomPipelineContext<'a> {
+    layout: &'a BindGroupLayoutDescriptor,
+    fullscreen: &'a FullscreenShader,
+    cache: &'a PipelineCache,
+    shader: &'a Handle<Shader>,
+}
+
+fn bloom_pipeline(
+    context: BloomPipelineContext,
+    entry: &'static str,
+    additive: bool,
+) -> CachedRenderPipelineId {
+    let blend = additive.then(|| BlendState {
+        color: additive_component(),
+        alpha: additive_component(),
+    });
+    context
+        .cache
+        .queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("moonly_bloom".into()),
+            layout: vec![context.layout.clone()],
+            vertex: context.fullscreen.to_vertex_state(),
+            fragment: Some(FragmentState {
+                shader: context.shader.clone(),
+                entry_point: Some(entry.into()),
+                targets: vec![Some(ColorTargetState {
+                    format: crate::view_targets::GBUFFER_FORMAT,
+                    blend,
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
+            ..default()
+        })
+}
+
+const fn additive_component() -> BlendComponent {
+    BlendComponent {
+        src_factor: BlendFactor::One,
+        dst_factor: BlendFactor::One,
+        operation: BlendOperation::Add,
+    }
+}
+
+#[derive(SystemParam)]
+pub(crate) struct BloomPrepareInputs<'w> {
+    device: Res<'w, RenderDevice>,
+    queue: Res<'w, RenderQueue>,
+    cache: Res<'w, PipelineCache>,
+    pipeline: Res<'w, MoonlyBloomPipeline>,
+}
+
+pub(crate) fn prepare_bloom_bind_groups(
+    mut commands: Commands,
+    inputs: BloomPrepareInputs,
+    views: Query<(Entity, &MoonlyViewTargets), With<MoonlyCamera>>,
+) {
+    for (entity, targets) in &views {
+        let groups = [0_usize, 1, 2, 3, 4].map(|stage| {
+            let source = bloom_source(targets, stage);
+            let target = bloom_target(targets, stage);
+            create_bloom_bind_group(&inputs, source, target, stage)
+        });
+        commands.entity(entity).insert(ViewBloomBindGroups(groups));
+    }
+}
+
+fn bloom_source(targets: &MoonlyViewTargets, stage: usize) -> &ColorAttachment {
+    if stage == 0 {
+        return &targets.scene;
+    }
+    let source_level = if stage < 3 { stage - 1 } else { 5 - stage };
+    targets.bloom.get(source_level).unwrap_or(&targets.scene)
+}
+
+fn bloom_target(targets: &MoonlyViewTargets, stage: usize) -> &ColorAttachment {
+    let target_level = if stage < 3 { stage } else { 4 - stage };
+    targets.bloom.get(target_level).unwrap_or(&targets.scene)
+}
+
+fn create_bloom_bind_group(
+    inputs: &BloomPrepareInputs,
+    source: &ColorAttachment,
+    target: &ColorAttachment,
+    stage: usize,
+) -> BindGroup {
+    let input = source.texture.texture.size();
+    let output = target.texture.texture.size();
+    let uniform = MoonlyBloomUniform {
+        input_size: Vec2::new(input.width as f32, input.height as f32),
+        output_size: Vec2::new(output.width as f32, output.height as f32),
+        mode: UVec4::splat(stage as u32),
+    };
+    let mut uniform = UniformBuffer::from(uniform);
+    uniform.write_buffer(&inputs.device, &inputs.queue);
+    inputs.device.create_bind_group(
+        Some("moonly_bloom_bind_group"),
+        &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),
+        &BindGroupEntries::sequential((&source.texture.default_view, &uniform)),
+    )
+}
+
+#[derive(SystemParam)]
+pub(crate) struct BloomRenderInputs<'w> {
+    cache: Res<'w, PipelineCache>,
+    pipeline: Res<'w, MoonlyBloomPipeline>,
+    config: Res<'w, Hdr10PostConfig>,
+    timer: Res<'w, crate::gpu_timer::MoonlyGpuTimer>,
+}
+
+pub(crate) fn render_bloom(
+    view: ViewQuery<(&MoonlyViewTargets, &ViewBloomBindGroups), With<MoonlyCamera>>,
+    inputs: BloomRenderInputs,
+    mut context: RenderContext,
+) {
+    let BloomRenderInputs {
+        cache,
+        pipeline,
+        config,
+        timer,
+    } = inputs;
+    if config.bloom_intensity <= 0.0 {
+        return;
+    }
+    let (targets, groups) = view.into_inner();
+    for (stage, group) in groups.0.iter().enumerate() {
+        let id = if stage < 3 {
+            pipeline.downsample
+        } else {
+            pipeline.upsample
+        };
+        let Some(render_pipeline) = cache.get_render_pipeline(id) else {
+            continue;
+        };
+        render_bloom_stage(
+            bloom_target(targets, stage),
+            group,
+            render_pipeline,
+            &timer,
+            &mut context,
+        );
+    }
+}
+
+fn render_bloom_stage(
+    target: &ColorAttachment,
+    group: &BindGroup,
+    pipeline: &RenderPipeline,
+    timer: &crate::gpu_timer::MoonlyGpuTimer,
+    context: &mut RenderContext,
+) {
+    let attachments = [Some(target.get_attachment())];
+    let diagnostics = context.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
+    let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some("moonly_bloom"),
+        color_attachments: &attachments,
+        depth_stencil_attachment: None,
+        timestamp_writes: timer.timestamp_writes(crate::diagnostics::MoonlyPass::Bloom),
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    let span = diagnostics.pass_span(&mut pass, "moonly_bloom");
+    pass.set_render_pipeline(pipeline);
+    pass.set_bind_group(0, group, &[]);
+    pass.draw(0..3, 0..1);
+    span.end(&mut pass);
+}

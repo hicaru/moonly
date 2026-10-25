@@ -21,7 +21,7 @@ fn assert_vec3(actual: Vec3, expected: [f32; 3]) {
 fn all_nine_tonemap_operators_match_golden_values() {
     let cases = [
         (
-            TonemapOperator::ClassicXRay,
+            TonemapOperator::ClassicMoonly,
             [0.162_043_28, 0.771_940_9, 1.0],
         ),
         (

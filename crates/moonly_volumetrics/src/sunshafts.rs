@@ -1,6 +1,9 @@
 //! Volumetric sunshafts and spot light cones ported from `r4_rendertarget_accum_direct.cpp`.
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+};
 
 /// Jitter texture tile dimension (`64.f` in `accum_direct_volumetric`).
 pub const VOLUMETRIC_JITTER_TILE: f32 = 64.0;
@@ -44,6 +47,14 @@ impl Default for SunShaftsConfig {
             mie_anisotropy: 0.68,
             screen_space_decay: 0.96,
         }
+    }
+}
+
+impl ExtractResource<RenderApp> for SunShaftsConfig {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        *source
     }
 }
 

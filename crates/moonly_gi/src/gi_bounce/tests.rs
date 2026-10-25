@@ -1,13 +1,13 @@
 use super::*;
 use crate::gi_sampling::MONOLITH_GI_SEED;
-use moonly_core::XRayLightType;
+use moonly_core::MoonlyLightType;
 
-fn point_light() -> XRayLight {
-    XRayLight {
+fn point_light() -> MoonlyLight {
+    MoonlyLight {
         position: Vec3::ZERO,
         range: 10.0,
-        flags: XRayLightFlags::GI_ENABLED,
-        ..XRayLight::default()
+        flags: MoonlyLightFlags::GI_ENABLED,
+        ..MoonlyLight::default()
     }
 }
 
@@ -21,7 +21,7 @@ fn test_config() -> GiRadiosityConfig {
 
 fn targeted_reflector(index: u32, distance: f32) -> (GiReflectorBox, Vec3) {
     let light = point_light();
-    let mut random = XrayRandom::new();
+    let mut random = MoonlyRandom::new();
     let mut target = Vec3::ZERO;
     for current in 0..=index {
         target = monolith_photon_dir(&light, &mut random).unwrap_or(Vec3::ZERO);
@@ -44,7 +44,7 @@ fn assert_vec_near(actual: Vec3, expected: Vec3) {
 fn monolith_sampling_uses_the_original_seed_and_sequence() {
     assert_eq!(MONOLITH_GI_SEED, 0x1207_1980);
     let light = point_light();
-    let mut random = XrayRandom::new();
+    let mut random = MoonlyRandom::new();
     let first = monolith_photon_dir(&light, &mut random).unwrap_or_default();
     assert_vec_near(first, Vec3::new(-0.160_599_9, 0.025_730_985, -0.986_684_14));
     let second = monolith_photon_dir(&light, &mut random).unwrap_or_default();
@@ -158,7 +158,7 @@ fn generators_reject_zero_photons_and_invalid_ranges() {
 #[test]
 fn direct_lights_do_not_emit_unsupported_monolith_photons() {
     let mut light = point_light();
-    light.light_type = XRayLightType::Direct;
+    light.light_type = MoonlyLightType::Direct;
     let (reflector, _) = targeted_reflector(7, 5.0);
     let mut out = Vec::new();
     gi_generate_monolith(&light, &test_config(), &[reflector], &mut out);

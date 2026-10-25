@@ -1,4 +1,4 @@
-// XRay-Monolith R4 virtual GI bounce accumulation, HDAO, SSDO, and Activision colored AO in WESL.
+// Moonly-Monolith R4 virtual GI bounce accumulation, HDAO, SSDO, and Activision colored AO in WESL.
 
 struct VirtualGiLightGpu {
     position_range: vec4<f32>,

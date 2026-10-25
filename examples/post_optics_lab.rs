@@ -33,7 +33,7 @@ fn configure_post_scene(
     mut materials: ResMut<Assets<MoonlyLitMaterial>>,
 ) {
     post.operator = match numeric_arg("--tonemap", 4) {
-        0 => TonemapOperator::ClassicXRay,
+        0 => TonemapOperator::ClassicMoonly,
         1 => TonemapOperator::ExtendedReinhardW2,
         2 => TonemapOperator::ExtendedReinhardW3,
         3 => TonemapOperator::AcesNarkowicz,

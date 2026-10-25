@@ -1,4 +1,4 @@
-//! Moonly — Bevy lighting, dynamic shadows, GI radiosity, and HDR10 plugin ported from `xray-monolith`.
+//! Moonly — Bevy lighting, dynamic shadows, GI radiosity, and HDR10 plugin ported from `moonly-monolith`.
 
 pub mod prelude;
 
@@ -7,6 +7,7 @@ pub use moonly_core as core;
 pub use moonly_cull as cull;
 pub use moonly_gi as gi;
 pub use moonly_post as post;
+pub use moonly_render as render;
 pub use moonly_shadows as shadows;
 pub use moonly_volumetrics as volumetrics;
 
@@ -14,9 +15,8 @@ use bevy::prelude::*;
 use moonly_core::{MoonlyConfig, MoonlyCorePlugin};
 use moonly_cull::MoonlyCullPlugin;
 use moonly_gi::MoonlyGiPlugin;
-use moonly_post::MoonlyPostPlugin;
+use moonly_render::MoonlyRenderPlugin;
 use moonly_shadows::MoonlyShadowsPlugin;
-use moonly_volumetrics::MoonlyVolumetricsPlugin;
 
 /// Master Bevy plugin that installs all Moonly lighting, culling, shadow, GI, volumetric, and post plugins.
 #[derive(Debug, Default, Clone)]
@@ -39,11 +39,10 @@ impl Plugin for MoonlyPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             MoonlyCorePlugin,
+            MoonlyRenderPlugin,
             MoonlyCullPlugin,
             MoonlyShadowsPlugin,
             MoonlyGiPlugin,
-            MoonlyVolumetricsPlugin,
-            MoonlyPostPlugin,
         ))
         .insert_resource(self.config.clone());
     }
@@ -65,7 +64,7 @@ mod tests {
 
         let light_transform = Transform::from_xyz(0.0, 4.0, 0.0).looking_at(Vec3::ZERO, Vec3::Z);
         app.world_mut().spawn((
-            XRayLight::spot(
+            MoonlyLight::spot(
                 Vec3::new(0.0, 4.0, 0.0),
                 Vec3::NEG_Y,
                 Vec3::new(3.0, 2.5, 2.0),
@@ -90,8 +89,14 @@ mod tests {
         let gi = app.world().resource::<GiLightField>();
         assert!(!gi.virtual_lights.is_empty());
 
-        let alloc = app.world().resource::<SmapAllocator>();
-        assert_eq!(alloc.allocated.len(), 1);
+        let batches = app.world().resource::<LocalShadowBatches>();
+        assert_eq!(batches.view_count(), 1);
+        assert!(
+            batches
+                .active()
+                .first()
+                .is_some_and(|batch| batch.allocator.allocated.len() == 1)
+        );
     }
 
     #[test]
@@ -119,7 +124,7 @@ mod tests {
         let entity = app
             .world_mut()
             .spawn((
-                XRayLight::spot(Vec3::Y, Vec3::NEG_Y, Vec3::ONE, 8.0, 1.0),
+                MoonlyLight::spot(Vec3::Y, Vec3::NEG_Y, Vec3::ONE, 8.0, 1.0),
                 Transform::from_translation(Vec3::Y),
                 GlobalTransform::default(),
             ))
@@ -140,10 +145,10 @@ mod tests {
         assert!(cleared.is_some_and(|mat| mat.uniform.spot_color_vol == Vec4::ZERO));
 
         app.world_mut().spawn((
-            XRayLight {
-                light_type: XRayLightType::Direct,
+            MoonlyLight {
+                light_type: MoonlyLightType::Direct,
                 color: Vec3::new(2.0, 3.0, 4.0),
-                ..XRayLight::default()
+                ..MoonlyLight::default()
             },
             Transform::default(),
             GlobalTransform::default(),

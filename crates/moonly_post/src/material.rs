@@ -1,4 +1,4 @@
-//! Custom Bevy `Material` bound to `moonly_lit.wesl` with automatic XRay-Monolith uniform sync.
+//! Custom Bevy `Material` bound to `moonly_lit.wesl` with automatic Moonly-Monolith uniform sync.
 
 use bevy::{
     prelude::*,
@@ -168,7 +168,7 @@ pub(crate) struct LightingUniformParams<'a> {
     pub optics: &'a OpticsMode,
 }
 
-/// Synchronize global XRay-Monolith lighting, GI, and HDR10 resources into all `MoonlyLitMaterial` assets.
+/// Synchronize global Moonly-Monolith lighting, GI, and HDR10 resources into all `MoonlyLitMaterial` assets.
 pub fn sync_moonly_lit_materials(
     core_res: CoreLightingRes,
     post_res: PostLightingRes,

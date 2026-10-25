@@ -3,26 +3,47 @@
 pub mod config;
 pub mod hemisphere;
 pub mod lights;
+pub mod projector;
 pub mod shader_bus;
+pub mod shadow_package;
+pub mod spot_xform;
 
-use bevy::{asset::embedded_asset, prelude::*, transform::TransformSystems};
+use bevy::{
+    asset::embedded_asset,
+    prelude::*,
+    render::{
+        RenderApp, extract_component::ExtractComponentPlugin,
+        extract_resource::ExtractResourcePlugin,
+    },
+    transform::TransformSystems,
+};
 
 pub use crate::{
     config::{
-        AmbientOcclusionMode, DEFAULT_DLIGHTS_CLIP, DEFAULT_GI_CLIP_METERS, DEFAULT_GI_PHOTONS,
-        DEFAULT_GI_REFLECTIVITY, DEFAULT_SMAP_POOL_SIZE, DEFAULT_SUN_DIAGONAL_OFFSET_METERS,
-        DEFAULT_SUN_FAR_METERS, DEFAULT_SUN_MIDDLE_METERS, DEFAULT_SUN_NEAR_METERS,
-        GiRadiosityConfig, MoonlyConfig, MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig,
+        AmbientOcclusionMode, AmbientOcclusionSettings, DEFAULT_DLIGHTS_CLIP,
+        DEFAULT_GI_CLIP_METERS, DEFAULT_GI_PHOTONS, DEFAULT_GI_REFLECTIVITY,
+        DEFAULT_SMAP_POOL_SIZE, DEFAULT_SUN_DIAGONAL_OFFSET_METERS, DEFAULT_SUN_FAR_METERS,
+        DEFAULT_SUN_MIDDLE_METERS, DEFAULT_SUN_NEAR_METERS, GiRadiosityConfig, MoonlyConfig,
+        MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig,
     },
     hemisphere::{
         HEMI_CUBE_DIRS, HEMI_FALL_SPEED, HEMI_RISE_SPEED, HEMI_SAMPLE_COUNT, HEMI_SAMPLE_DIRS,
         HemisphereTracker, WeatherEnvironment, update_hemisphere_trackers,
     },
     lights::{
-        LightPackage, MoonlyLight, VirtualGiLight, VolumetricLightSettings, XRayLight,
-        XRayLightFlags, XRayLightType, collect_light_packages,
+        LightPackage, MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight,
+        VirtualGiLightPackage, VolumetricLightSettings, collect_light_packages,
     },
+    projector::MoonlyProjector,
     shader_bus::{SHADER_BUS_SLOT_COUNT, ShaderBus},
+    shadow_package::{
+        MoonlyShadowBatch, MoonlyShadowPackage, MoonlyShadowRect, MoonlyShadowView,
+        MoonlySunCascade, MoonlySunPackage,
+    },
+    spot_xform::{
+        MIN_SPOT_SMAP_SIZE, SpotShadowXform, TAN_SHIFT_OMNIPART, TAN_SHIFT_POINT, TAN_SHIFT_SPOT,
+        look_to_rh_mat4, orthographic_rh_mat4, perspective_rh_mat4,
+    },
 };
 
 ///Raw WESL source for `core_common.wesl` (`common_functions.h`).
@@ -31,9 +52,9 @@ pub const CORE_COMMON_WESL_SOURCE: &str = include_str!("core_common.wesl");
 /// Ordered execution phases for Moonly lighting, shadow, GI, and material sync in `PostUpdate`.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MoonlySystemSet {
-    /// Gather active `XRayLight` entities into `LightPackage` and update hemisphere trackers.
+    /// Gather active `MoonlyLight` entities into `LightPackage` and update hemisphere trackers.
     CollectLights,
-    /// Compute sun shadow cascades, pack the SMAP atlas, and trace 32-photon GI bounces.
+    /// Compute sun shadow cascades, pack the SMAP atlas, and trace GI bounces.
     UpdateShadowsAndGi,
     /// Upload lighting, shadow, GI, and HDR10 uniforms into `MoonlyLitMaterial` assets.
     SyncMaterials,
@@ -47,6 +68,16 @@ impl Plugin for MoonlyCorePlugin {
     fn build(&self, app: &mut App) {
         if app.is_plugin_added::<AssetPlugin>() {
             embedded_asset!(app, "core_common.wesl");
+        }
+        if app.get_sub_app(RenderApp).is_some() {
+            app.add_plugins(ExtractResourcePlugin::<MoonlyConfig>::default());
+            app.add_plugins(ExtractResourcePlugin::<AmbientOcclusionSettings>::default());
+            app.add_plugins(ExtractResourcePlugin::<WeatherEnvironment>::default());
+            app.add_plugins(ExtractResourcePlugin::<LightPackage>::default());
+            app.add_plugins(ExtractResourcePlugin::<MoonlyShadowPackage>::default());
+            app.add_plugins(ExtractResourcePlugin::<MoonlySunPackage>::default());
+            app.add_plugins(ExtractResourcePlugin::<VirtualGiLightPackage>::default());
+            app.add_plugins(ExtractComponentPlugin::<MoonlyProjector>::default());
         }
         app.configure_sets(
             PostUpdate,
@@ -62,19 +93,28 @@ impl Plugin for MoonlyCorePlugin {
         .register_type::<MoonlyPipelineTier>()
         .register_type::<ShadowFilterMode>()
         .register_type::<AmbientOcclusionMode>()
+        .register_type::<AmbientOcclusionSettings>()
         .register_type::<SunCascadeConfig>()
         .register_type::<GiRadiosityConfig>()
-        .register_type::<XRayLight>()
-        .register_type::<XRayLightType>()
-        .register_type::<XRayLightFlags>()
+        .register_type::<MoonlyLight>()
+        .register_type::<MoonlyLightType>()
+        .register_type::<MoonlyLightFlags>()
         .register_type::<VolumetricLightSettings>()
         .register_type::<VirtualGiLight>()
+        .register_type::<VirtualGiLightPackage>()
         .register_type::<LightPackage>()
+        .register_type::<MoonlyShadowPackage>()
+        .register_type::<MoonlySunPackage>()
+        .register_type::<MoonlyProjector>()
         .register_type::<WeatherEnvironment>()
         .register_type::<HemisphereTracker>()
         .register_type::<ShaderBus>()
         .init_resource::<MoonlyConfig>()
+        .init_resource::<AmbientOcclusionSettings>()
         .init_resource::<LightPackage>()
+        .init_resource::<VirtualGiLightPackage>()
+        .init_resource::<MoonlyShadowPackage>()
+        .init_resource::<MoonlySunPackage>()
         .init_resource::<WeatherEnvironment>()
         .init_resource::<ShaderBus>()
         .add_systems(
@@ -93,23 +133,29 @@ mod tests {
     #[test]
     fn light_package_splits_shadowed_point_into_six_omniparts() {
         let mut pkg = LightPackage::default();
-        let point = XRayLight {
-            light_type: XRayLightType::Point,
-            flags: XRayLightFlags::SHADOW,
-            ..XRayLight::default()
+        let source = Entity::from_bits(42);
+        let point = MoonlyLight {
+            light_type: MoonlyLightType::Point,
+            flags: MoonlyLightFlags::SHADOW,
+            source_entity: Some(source),
+            ..MoonlyLight::default()
         };
         pkg.push(point);
         assert_eq!(pkg.v_shadowed.len(), 6);
         assert!(pkg.v_point.is_empty());
+        assert!(pkg.v_shadowed.iter().all(|light| {
+            light.omnipart_parent == Some(source)
+                && light.omnipart_face.is_some_and(|face| face < 6)
+        }));
     }
 
     #[test]
     fn light_package_retains_direct_lights_in_a_dedicated_bucket() {
         let mut pkg = LightPackage::default();
-        let direct = XRayLight {
-            light_type: XRayLightType::Direct,
-            flags: XRayLightFlags::SHADOW,
-            ..XRayLight::default()
+        let direct = MoonlyLight {
+            light_type: MoonlyLightType::Direct,
+            flags: MoonlyLightFlags::SHADOW,
+            ..MoonlyLight::default()
         };
         pkg.push(direct);
         assert_eq!(pkg.v_direct.len(), 1);
@@ -122,9 +168,9 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<LightPackage>();
         app.add_systems(Update, collect_light_packages);
-        let light = XRayLight {
+        let light = MoonlyLight {
             position: Vec3::new(9.0, 8.0, 7.0),
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         };
         let entity = app
             .world_mut()
@@ -132,7 +178,7 @@ mod tests {
             .id();
         app.update();
 
-        let synced = app.world().get::<XRayLight>(entity);
+        let synced = app.world().get::<MoonlyLight>(entity);
         assert_eq!(synced.map(|light| light.position), Some(Vec3::ZERO));
         assert_eq!(app.world().resource::<LightPackage>().v_shadowed.len(), 6);
 
@@ -144,7 +190,7 @@ mod tests {
             .insert(GlobalTransform::from(transform));
         app.update();
 
-        let synced = app.world().get::<XRayLight>(entity);
+        let synced = app.world().get::<MoonlyLight>(entity);
         assert!(synced.is_some_and(|light| light.direction.distance(Vec3::NEG_X) < 1.0e-5));
         assert!(synced.is_some_and(|light| light.right.distance(Vec3::NEG_Z) < 1.0e-5));
     }
@@ -154,7 +200,7 @@ mod tests {
         let risen = HemisphereTracker::smooth_value(0.2, 1.0, 0.1);
         let fallen = HemisphereTracker::smooth_value(1.0, 0.2, 0.1);
         assert!((risen - 0.52).abs() < 1.0e-5);
-        assert!((fallen - 0.96).abs() < 1.0e-5);
+        assert!((fallen - 0.84).abs() < 1.0e-5);
     }
 
     #[test]

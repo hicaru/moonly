@@ -30,7 +30,7 @@ struct MonolithCrystal;
 fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(window_plugin(
-            "Moonly — XRay-Monolith R4 Lighting & GI Showcase",
+            "Moonly — Moonly-Monolith R4 Lighting & GI Showcase",
         )))
         .add_plugins(MoonlyPlugin::enhanced())
         .insert_resource(ClearColor(Color::srgb(0.18, 0.24, 0.34)))
@@ -164,7 +164,7 @@ fn spawn_lights_and_gi(
     ));
 
     commands.spawn((
-        XRayLight::spot(
+        MoonlyLight::spot(
             Vec3::new(0.0, 4.6, 1.2),
             Vec3::new(0.0, -0.95, -0.25).normalize(),
             Vec3::new(2.8, 2.1, 1.3),

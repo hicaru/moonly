@@ -1,12 +1,20 @@
 //! Software hierarchical occlusion rasterizer and light visibility culling for Moonly.
 
+mod caster_feedback;
+pub mod hom;
+mod hom_geometry;
+mod hom_light;
 pub mod light_vis;
 pub mod occ_rasterizer;
 pub mod smap_vis;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, transform::TransformSystems};
+use moonly_core::MoonlySystemSet;
+use moonly_render::MoonlyCasterVisibility;
 
 pub use crate::{
+    hom::MoonlyHomView,
+    hom_geometry::MoonlyHomOccluder,
     light_vis::{
         EYE_IN_CONE_BIAS_RAD, EYE_IN_CONE_SCALE, LightVisibilityState, SAFE_WORLD_BOUND_METERS,
     },
@@ -27,14 +35,35 @@ impl Plugin for MoonlyCullPlugin {
             .register_type::<SmapVisPhase>()
             .register_type::<SmapVisTracker>()
             .register_type::<LightVisibilityState>()
-            .init_resource::<OccRasterizer>();
+            .register_type::<MoonlyHomOccluder>()
+            .register_type::<MoonlyHomView>()
+            .init_resource::<OccRasterizer>()
+            .init_resource::<MoonlyCasterVisibility>()
+            .init_resource::<hom_geometry::MoonlyHomGeometry>()
+            .add_systems(
+                PostUpdate,
+                (hom_geometry::sync_hom_geometry, hom::update_hom_views)
+                    .chain()
+                    .after(TransformSystems::Propagate)
+                    .before(MoonlySystemSet::CollectLights),
+            )
+            .add_systems(
+                PostUpdate,
+                (
+                    hom_light::apply_hom_light_visibility,
+                    caster_feedback::update_smapvis,
+                )
+                    .chain()
+                    .after(MoonlySystemSet::CollectLights)
+                    .before(MoonlySystemSet::UpdateShadowsAndGi),
+            );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonly_core::{XRayLight, XRayLightType};
+    use moonly_core::{MoonlyLight, MoonlyLightType};
 
     #[test]
     fn occ_rasterizer_occludes_behind_rasterized_quad_in_both_modes() {
@@ -90,13 +119,13 @@ mod tests {
 
     #[test]
     fn light_vis_skips_occlusion_query_when_eye_inside_spot_cone() {
-        let light = XRayLight {
-            light_type: XRayLightType::Spot,
+        let light = MoonlyLight {
+            light_type: MoonlyLightType::Spot,
             position: Vec3::ZERO,
             direction: Vec3::Z,
             range: 10.0,
             cone_angle: 1.2,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         };
         let mut vis = LightVisibilityState::default();
         assert!(!vis.vis_prepare(&light, Vec3::new(0.0, 0.0, 2.0), 5));

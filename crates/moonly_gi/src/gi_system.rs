@@ -1,24 +1,61 @@
-use bevy::prelude::*;
-use moonly_core::{LightPackage, MoonlyConfig, MoonlyPipelineTier, XRayLight, XRayLightType};
+use bevy::{ecs::system::SystemParam, prelude::*};
+#[cfg(test)]
+use moonly_core::{LightPackage, MoonlyLightType, MoonlyPipelineTier};
+use moonly_core::{MoonlyConfig, MoonlyLight, VirtualGiLightPackage};
 
-use crate::gi_bounce::{GiLightField, GiReflectorBox, gi_generate_enhanced, gi_generate_monolith};
+use crate::gi_bounce::{GiLightField, GiReflectorBox};
+#[cfg(test)]
+use crate::gi_bounce::{gi_generate_enhanced, gi_generate_monolith};
+use crate::gi_cache::{GiGenerationContext, GiLightCache, generate_cached_light};
+use crate::gi_geometry::StaticGiGeometry;
 
+#[cfg(test)]
 const OMNIPART_FACE_COUNT: usize = 6;
 
-/// Update the virtual light field from every eligible light package bucket.
-pub fn update_gi_light_field(
-    config: Res<MoonlyConfig>,
-    package: Res<LightPackage>,
-    reflector_query: Query<&GiReflectorBox>,
-    mut field: ResMut<GiLightField>,
-    mut buffers: Local<(Vec<GiReflectorBox>, Vec<GiReflectorBox>)>,
-) {
-    let (ref mut reflectors, ref mut scratch) = *buffers;
-    reflectors.clear();
-    reflectors.extend(reflector_query.iter().copied());
-    generate_package_gi(&config, &package, reflectors, &mut field, scratch);
+#[derive(SystemParam)]
+pub struct GiSceneInputs<'w, 's> {
+    config: Res<'w, MoonlyConfig>,
+    lights: Query<'w, 's, (Entity, &'static MoonlyLight)>,
+    reflectors: Query<'w, 's, &'static GiReflectorBox>,
+    geometry: Res<'w, StaticGiGeometry>,
 }
 
+#[derive(Default)]
+pub struct GiFrameBuffers {
+    reflectors: Vec<GiReflectorBox>,
+    scratch: Vec<GiReflectorBox>,
+}
+
+/// Update cached virtual lights from stable source light entities.
+pub fn update_gi_light_field(
+    inputs: GiSceneInputs,
+    mut field: ResMut<GiLightField>,
+    mut cache: ResMut<GiLightCache>,
+    mut package: ResMut<VirtualGiLightPackage>,
+    mut buffers: Local<GiFrameBuffers>,
+) {
+    field.virtual_lights.clear();
+    cache.retain(&inputs.lights);
+    let GiFrameBuffers {
+        reflectors,
+        scratch,
+    } = &mut *buffers;
+    reflectors.clear();
+    reflectors.extend(inputs.reflectors.iter().copied());
+    let mut context = GiGenerationContext {
+        config: &inputs.config,
+        geometry: &inputs.geometry,
+        reflectors,
+        scratch,
+    };
+    for (entity, light) in &inputs.lights {
+        generate_cached_light(&mut cache, entity, light, &mut context, &mut field);
+    }
+    package.lights.clear();
+    package.lights.extend_from_slice(&field.virtual_lights);
+}
+
+#[cfg(test)]
 pub(crate) fn generate_package_gi(
     config: &MoonlyConfig,
     package: &LightPackage,
@@ -33,9 +70,10 @@ pub(crate) fn generate_package_gi(
     }
 }
 
+#[cfg(test)]
 fn generate_shadowed_gi(
     config: &MoonlyConfig,
-    lights: &[XRayLight],
+    lights: &[MoonlyLight],
     reflectors: &[GiReflectorBox],
     field: &mut GiLightField,
     scratch: &mut Vec<GiReflectorBox>,
@@ -45,7 +83,7 @@ fn generate_shadowed_gi(
         let group_len = omnipart_group_len(lights, index);
         if group_len == OMNIPART_FACE_COUNT {
             let mut point = light.clone();
-            point.light_type = XRayLightType::Point;
+            point.light_type = MoonlyLightType::Point;
             generate_light_gi(config, &point, reflectors, field, scratch);
             index += group_len;
         } else {
@@ -55,11 +93,12 @@ fn generate_shadowed_gi(
     }
 }
 
-fn omnipart_group_len(lights: &[XRayLight], first: usize) -> usize {
+#[cfg(test)]
+fn omnipart_group_len(lights: &[MoonlyLight], first: usize) -> usize {
     let Some(light) = lights.get(first) else {
         return 0;
     };
-    if !matches!(light.light_type, XRayLightType::Omnipart) {
+    if !matches!(light.light_type, MoonlyLightType::Omnipart) {
         return 1;
     }
     lights.get(first..).map_or(1, |tail| {
@@ -70,8 +109,9 @@ fn omnipart_group_len(lights: &[XRayLight], first: usize) -> usize {
     })
 }
 
-fn same_omnipart_source(light: &XRayLight, part: &XRayLight) -> bool {
-    matches!(part.light_type, XRayLightType::Omnipart)
+#[cfg(test)]
+fn same_omnipart_source(light: &MoonlyLight, part: &MoonlyLight) -> bool {
+    matches!(part.light_type, MoonlyLightType::Omnipart)
         && light.position == part.position
         && light.color == part.color
         && light.range.to_bits() == part.range.to_bits()
@@ -80,9 +120,10 @@ fn same_omnipart_source(light: &XRayLight, part: &XRayLight) -> bool {
         && light.volumetric == part.volumetric
 }
 
+#[cfg(test)]
 fn generate_light_gi(
     config: &MoonlyConfig,
-    light: &XRayLight,
+    light: &MoonlyLight,
     reflectors: &[GiReflectorBox],
     field: &mut GiLightField,
     scratch: &mut Vec<GiReflectorBox>,

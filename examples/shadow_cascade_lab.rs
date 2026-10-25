@@ -2,7 +2,7 @@
 mod support;
 
 use bevy::{app::AppExit, prelude::*};
-use moonly::prelude::*;
+use moonly::{core::MoonlySystemSet, prelude::*};
 use support::{
     CaptureOptions, CaptureState, capture_system, deterministic_time, scene::spawn_test_scene,
     window_plugin,
@@ -29,7 +29,12 @@ fn main() -> AppExit {
         .insert_resource(deterministic_time())
         .add_systems(Startup, setup_cascades)
         .add_systems(Update, (move_camera, capture_system).chain())
-        .add_systems(PostUpdate, (draw_cascade_gizmos, audit_cascades).chain())
+        .add_systems(
+            PostUpdate,
+            (draw_cascade_gizmos, audit_cascades)
+                .chain()
+                .after(MoonlySystemSet::UpdateShadowsAndGi),
+        )
         .run()
 }
 

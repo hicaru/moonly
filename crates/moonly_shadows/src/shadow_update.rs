@@ -1,9 +1,15 @@
 //! Frame-level camera selection, cascade updates, rain shadows, and atlas allocation.
 
 use bevy::{ecs::system::SystemParam, prelude::*};
-use moonly_core::{LightPackage, MoonlyConfig, MoonlyPipelineTier, WeatherEnvironment};
+use moonly_core::{
+    LightPackage, MoonlyConfig, MoonlyShadowBatch, MoonlyShadowPackage, MoonlyShadowRect,
+    MoonlyShadowView, MoonlySunCascade, MoonlySunPackage, WeatherEnvironment,
+};
 
-use crate::{CameraFrustumParams, RainShadowState, SmapAllocator, SpotShadowXform, SunCascades};
+use crate::{
+    CameraFrustumParams, LocalShadowBatches, RainShadowState, SmapAllocator, SpotShadowXform,
+    SunCascades,
+};
 
 /// Resources and camera query used by the shadow frame update.
 #[derive(SystemParam)]
@@ -12,6 +18,9 @@ pub struct ShadowFrameParams<'w, 's> {
     env: Res<'w, WeatherEnvironment>,
     package: Res<'w, LightPackage>,
     allocator: ResMut<'w, SmapAllocator>,
+    batches: ResMut<'w, LocalShadowBatches>,
+    render_package: Option<ResMut<'w, MoonlyShadowPackage>>,
+    render_sun: Option<ResMut<'w, MoonlySunPackage>>,
     cascades: ResMut<'w, SunCascades>,
     rain: ResMut<'w, RainShadowState>,
     cameras: Query<
@@ -43,12 +52,86 @@ pub fn update_shadow_cascades_and_atlas(mut params: ShadowFrameParams) {
         params.config.smap_pool_size,
     );
     update_rain_shadow(&params.config, &mut params.rain, &cam);
-    allocate_spot_shadows(
-        &params.config,
+    params.batches.rebuild(
         &params.package,
+        &params.config,
         cam.camera_transform.translation,
-        &mut params.allocator,
     );
+    if let Some(render_package) = params.render_package.as_mut() {
+        sync_render_package(
+            &params.batches,
+            render_package,
+            params.config.smap_pool_size,
+        );
+    }
+    if let Some(render_sun) = params.render_sun.as_mut() {
+        sync_sun_package(
+            &params.cascades,
+            render_sun,
+            params.config.smap_pool_size,
+            params.config.sun_cascades.depth_bias,
+            params.config.sun_cascades.use_minmax_near,
+        );
+    }
+}
+
+fn sync_render_package(
+    source: &LocalShadowBatches,
+    target: &mut MoonlyShadowPackage,
+    pool_size: u32,
+) {
+    target.pool_size = pool_size;
+    target
+        .batches
+        .resize_with(source.active().len(), MoonlyShadowBatch::default);
+    for (target_batch, source_batch) in target.batches.iter_mut().zip(source.active()) {
+        target_batch.views.clear();
+        target_batch
+            .views
+            .extend(source_batch.views.iter().map(|view| MoonlyShadowView {
+                light_index: view.light_index,
+                xform: view.xform,
+                rect: MoonlyShadowRect {
+                    x: view.rect.min_x,
+                    y: view.rect.min_y,
+                    size: view.rect.width(),
+                },
+            }));
+    }
+}
+
+fn sync_sun_package(
+    source: &SunCascades,
+    target: &mut MoonlySunPackage,
+    pool_size: u32,
+    depth_bias: f32,
+    use_minmax_near: bool,
+) {
+    target.pool_size = pool_size.max(1);
+    target.depth_bias = depth_bias;
+    target.use_minmax_near = use_minmax_near;
+    target.cascades.clear();
+    target
+        .cascades
+        .extend(source.cascades.iter().map(|cascade| MoonlySunCascade {
+            view: MoonlyShadowView {
+                light_index: 0,
+                xform: SpotShadowXform {
+                    view: cascade.view,
+                    proj: cascade.proj,
+                    combine: cascade.combine,
+                    smap_size: target.pool_size,
+                    screen_space_area: 1.0,
+                },
+                rect: MoonlyShadowRect {
+                    x: 0,
+                    y: 0,
+                    size: target.pool_size,
+                },
+            },
+            split_near: cascade.split_near,
+            split_far: cascade.split_far,
+        }));
 }
 
 fn active_camera_params(
@@ -90,34 +173,4 @@ fn update_rain_shadow(
         cam.fov_y_radians,
         cam.aspect_ratio,
     );
-}
-
-fn allocate_spot_shadows(
-    config: &MoonlyConfig,
-    package: &LightPackage,
-    camera_pos: Vec3,
-    allocator: &mut SmapAllocator,
-) {
-    for (index, light) in package.v_shadowed.iter().enumerate() {
-        let previous_size = allocator.previous_smap_size(index);
-        let xf = SpotShadowXform::compute_xf_spot(
-            light,
-            camera_pos,
-            config.smap_pool_size,
-            previous_size,
-        );
-        allocator.record_smap_size(index, xf.smap_size);
-        let allocated = if matches!(config.tier, MoonlyPipelineTier::MoonlyEnhanced) {
-            allocator.push_enhanced_bssf(xf.smap_size)
-        } else {
-            allocator.push_monolith(xf.smap_size)
-        };
-        if allocated.is_none() {
-            warn!(
-                "Shadow atlas allocation failed for light {} at size {}",
-                index, xf.smap_size
-            );
-        }
-    }
-    allocator.finish_frame(package.v_shadowed.len());
 }

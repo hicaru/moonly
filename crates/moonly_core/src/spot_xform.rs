@@ -1,7 +1,7 @@
 //! Spot and omnipart shadow transform and adaptive SMAP sizing (`Light_Render_Direct_ComputeXFS.cpp`).
 
+use crate::{MoonlyLight, MoonlyLightType};
 use bevy::prelude::*;
-use moonly_core::{XRayLight, XRayLightType};
 
 /// Tangent shift padding for split omnidirectional lights (`0.3f` in R4).
 pub const TAN_SHIFT_OMNIPART: f32 = 0.3;
@@ -47,7 +47,7 @@ impl SpotShadowXform {
     /// Compute view/projection matrices and adaptive SMAP size (`CLight_Compute_XFORM_and_VIS::compute_xf_spot`).
     #[must_use]
     pub fn compute_xf_spot(
-        light: &XRayLight,
+        light: &MoonlyLight,
         camera_pos: Vec3,
         max_pool_size: u32,
         prev_size: u32,
@@ -76,9 +76,9 @@ impl SpotShadowXform {
         };
 
         let tan_shift = match light.light_type {
-            XRayLightType::Omnipart => TAN_SHIFT_OMNIPART,
-            XRayLightType::Point | XRayLightType::Direct => TAN_SHIFT_POINT,
-            XRayLightType::Spot => TAN_SHIFT_SPOT,
+            MoonlyLightType::Omnipart => TAN_SHIFT_OMNIPART,
+            MoonlyLightType::Point | MoonlyLightType::Direct => TAN_SHIFT_POINT,
+            MoonlyLightType::Spot => TAN_SHIFT_SPOT,
         };
         let min_fov = std::f32::consts::PI / 180.0;
         let max_fov = std::f32::consts::PI - 1.0e-3;
@@ -170,11 +170,11 @@ mod tests {
 
     #[test]
     fn zero_right_vector_uses_original_fallback_basis() {
-        let light = XRayLight {
+        let light = MoonlyLight {
             position: Vec3::new(1.0, 2.0, 3.0),
             direction: Vec3::NEG_Y,
             right: Vec3::ZERO,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         };
         let xf = SpotShadowXform::compute_xf_spot(&light, Vec3::ZERO, 2048, 0);
         let expected = look_to_rh_mat4(light.position, Vec3::NEG_Y, Vec3::Z);

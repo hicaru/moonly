@@ -93,7 +93,7 @@ pub(crate) fn spawn_test_scene(
         ));
     }
     commands.spawn((
-        XRayLight::spot(
+        MoonlyLight::spot(
             Vec3::new(-1.0, 4.5, 1.8),
             Vec3::new(0.2, -1.0, -0.35),
             Vec3::new(3.2, 2.4, 1.5),

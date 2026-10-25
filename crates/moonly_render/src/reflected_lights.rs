@@ -1,0 +1,35 @@
+use moonly_core::{MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight};
+
+pub(crate) fn local_light(light: &VirtualGiLight) -> MoonlyLight {
+    MoonlyLight {
+        light_type: MoonlyLightType::Point,
+        flags: MoonlyLightFlags::default(),
+        color: light.color,
+        position: light.position,
+        direction: light.direction,
+        range: light.range,
+        ..MoonlyLight::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn reflected_lights_preserve_energy_range_and_direction() {
+        let light = VirtualGiLight {
+            position: Vec3::X,
+            direction: Vec3::Y,
+            color: Vec3::new(0.2, 0.3, 0.4),
+            range: 2.5,
+        };
+        let local = local_light(&light);
+        assert_eq!(local.light_type, MoonlyLightType::Point);
+        assert_eq!(local.color, light.color);
+        assert!((local.range - light.range).abs() < f32::EPSILON);
+        assert_eq!(local.direction, light.direction);
+    }
+}

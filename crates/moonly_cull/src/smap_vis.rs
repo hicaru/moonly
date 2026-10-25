@@ -26,9 +26,9 @@ pub struct SmapVisTracker {
     /// Current state machine phase.
     pub phase: SmapVisPhase,
     /// Candidate shadow caster entity IDs gathered during `Scan`.
-    pub candidates: Vec<u32>,
+    pub candidates: Vec<u64>,
     /// Casters confirmed occluded (`invisible` in `smapvis`).
-    pub invisible: Vec<u32>,
+    pub invisible: Vec<u64>,
     /// Frame counter when the tracker wakes from `Sleep`.
     pub sleep_until_frame: u32,
     /// Index of the candidate currently under test (`testQ_id`).
@@ -49,7 +49,7 @@ impl SmapVisTracker {
 
     /// Check whether a shadow caster ID is currently marked invisible.
     #[must_use]
-    pub fn is_caster_invisible(&self, caster_id: u32) -> bool {
+    pub fn is_caster_invisible(&self, caster_id: u64) -> bool {
         self.invisible.binary_search(&caster_id).is_ok()
     }
 

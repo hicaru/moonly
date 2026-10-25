@@ -1,6 +1,9 @@
 //! Temporal eye adaptation and luminance reduction ported from `r4_rendertarget_phase_luminance.cpp`.
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+};
 
 /// Default middle-gray target from `r4_rendertarget_phase_luminance.cpp`.
 pub const DEFAULT_MIDDLE_GRAY: f32 = 0.28;
@@ -39,6 +42,14 @@ impl Default for LuminanceAdaptationState {
             min_exposure: 0.35,
             max_exposure: 3.0,
         }
+    }
+}
+
+impl ExtractResource<RenderApp> for LuminanceAdaptationState {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        *source
     }
 }
 

@@ -9,30 +9,7 @@ pub const DEFAULT_HDAO_REJECT_RADIUS: f32 = 0.45;
 /// HDAO accept radius in meters (`g_fHDAOAcceptRadius`).
 pub const DEFAULT_HDAO_ACCEPT_RADIUS: f32 = 0.03;
 
-/// Runtime settings for SSAO, HDAO, SSDO, and multi-bounce colored AO.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Reflect)]
-#[reflect(Resource)]
-pub struct AmbientOcclusionSettings {
-    /// Reject radius in meters for HDAO/SSAO (`g_fHDAORejectRadius`).
-    pub reject_radius: f32,
-    /// Accept radius in meters for HDAO (`g_fHDAOAcceptRadius`).
-    pub accept_radius: f32,
-    /// Occlusion intensity multiplier (`g_fHDAOIntensity`).
-    pub intensity: f32,
-    /// Indirect directional bounce strength for SSDO.
-    pub ssdo_bounce_strength: f32,
-}
-
-impl Default for AmbientOcclusionSettings {
-    fn default() -> Self {
-        Self {
-            reject_radius: DEFAULT_HDAO_REJECT_RADIUS,
-            accept_radius: DEFAULT_HDAO_ACCEPT_RADIUS,
-            intensity: 1.15,
-            ssdo_bounce_strength: 0.65,
-        }
-    }
-}
+pub use moonly_core::AmbientOcclusionSettings;
 
 /// Evaluate Activision S2016 multi-bounce colored AO (`compute_colored_ao` in `common_functions.h`).
 #[must_use]

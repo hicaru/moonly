@@ -25,7 +25,7 @@ pub use crate::{
     },
     optics::{OpticsMode, evaluate_heat_vision_cpu, evaluate_night_vision_cpu},
     tonemap::{
-        Hdr10PostConfig, TonemapOperator, XRAY_CLASSIC_WHITEPOINT_SQ, encode_pq_st2084,
+        Hdr10PostConfig, MOONLY_CLASSIC_WHITEPOINT_SQ, TonemapOperator, encode_pq_st2084,
         evaluate_tonemap_cpu,
     },
 };

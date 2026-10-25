@@ -97,7 +97,6 @@ pub struct SmapAllocator {
     /// Failed allocation requests during the current pass.
     pub failed_allocations: usize,
     critical_points: Vec<IVec2>,
-    previous_smap_sizes: Vec<u32>,
 }
 
 impl SmapAllocator {
@@ -122,7 +121,7 @@ impl SmapAllocator {
         }
     }
 
-    /// Start a frame and preserve tile sizes for adaptive-size hysteresis.
+    /// Reset atlas allocations for a new frame.
     pub fn begin_frame(&mut self, pool_size: u32) {
         self.initialize(pool_size);
     }
@@ -184,22 +183,6 @@ impl SmapAllocator {
             return self.allocation_failed();
         };
         Some(self.allocate_at_index(index, size))
-    }
-
-    pub(crate) fn previous_smap_size(&self, index: usize) -> u32 {
-        self.previous_smap_sizes.get(index).copied().unwrap_or(0)
-    }
-
-    pub(crate) fn record_smap_size(&mut self, index: usize, size: u32) {
-        if let Some(previous) = self.previous_smap_sizes.get_mut(index) {
-            *previous = size;
-        } else {
-            self.previous_smap_sizes.push(size);
-        }
-    }
-
-    pub(crate) fn finish_frame(&mut self, light_count: usize) {
-        self.previous_smap_sizes.truncate(light_count);
     }
 
     fn add_monolith_rect(&mut self, rect: SmapRect) {

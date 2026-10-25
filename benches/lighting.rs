@@ -130,40 +130,48 @@ fn bench_occ_rasterizer(c: &mut Criterion) {
 fn bench_gi_radiosity(c: &mut Criterion) {
     let reflectors = build_test_reflectors(64);
     let lights = build_test_lights(12);
-    let cfg = GiRadiosityConfig {
-        cosine_weighted: true,
-        ..GiRadiosityConfig::default()
-    };
-    let mut out_virtual = Vec::with_capacity(384);
+    let mut out_virtual = Vec::with_capacity(768);
     let mut scratch = Vec::with_capacity(64);
 
-    let mut group = c.benchmark_group("gi_radiosity_32_photons");
-    group.bench_function("monolith_bruteforce_12_lights_64_boxes", |b| {
-        b.iter(|| {
-            out_virtual.clear();
-            for light in black_box(&lights) {
-                gi_generate_monolith(light, &cfg, black_box(&reflectors), &mut out_virtual);
-            }
-            black_box(out_virtual.len())
+    for photons in [16, 32, 64] {
+        let cfg = GiRadiosityConfig {
+            num_photons: photons,
+            cosine_weighted: true,
+            ..GiRadiosityConfig::default()
+        };
+        let mut group = c.benchmark_group(format!("gi_radiosity_{photons}_photons"));
+        group.bench_function("monolith_bruteforce_12_lights_64_boxes", |b| {
+            b.iter(|| {
+                out_virtual.clear();
+                for light in black_box(&lights) {
+                    gi_generate_monolith(
+                        light,
+                        &cfg,
+                        black_box(reflectors.as_slice()),
+                        &mut out_virtual,
+                    );
+                }
+                black_box(out_virtual.len())
+            });
         });
-    });
 
-    group.bench_function("moonly_enhanced_broadphase_12_lights_64_boxes", |b| {
-        b.iter(|| {
-            out_virtual.clear();
-            for light in black_box(&lights) {
-                gi_generate_enhanced(
-                    light,
-                    &cfg,
-                    black_box(&reflectors),
-                    &mut out_virtual,
-                    &mut scratch,
-                );
-            }
-            black_box(out_virtual.len())
+        group.bench_function("moonly_enhanced_broadphase_12_lights_64_boxes", |b| {
+            b.iter(|| {
+                out_virtual.clear();
+                for light in black_box(&lights) {
+                    gi_generate_enhanced(
+                        light,
+                        &cfg,
+                        black_box(&reflectors),
+                        &mut out_virtual,
+                        &mut scratch,
+                    );
+                }
+                black_box(out_virtual.len())
+            });
         });
-    });
-    group.finish();
+        group.finish();
+    }
 }
 
 fn bench_cascades_and_post(c: &mut Criterion) {

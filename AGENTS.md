@@ -1,6 +1,6 @@
 # Moonly — Agent Instructions & Coding Standards
 
-This document defines the mandatory coding standards, architectural rules, and verification steps for the `moonly` Bevy plugin (ported and enhanced from `xray-monolith` R3/R4 lighting, dynamic shadows, GI/RT radiosity, occlusion culling, volumetrics, and HDR10 post-processing). All AI agents and contributors must follow these rules strictly.
+This document defines the mandatory coding standards, architectural rules, and verification steps for the `moonly` Bevy plugin (ported and enhanced from `moonly-monolith` R3/R4 lighting, dynamic shadows, GI/RT radiosity, occlusion culling, volumetrics, and HDR10 post-processing). All AI agents and contributors must follow these rules strictly.
 
 ## 1. Formatting and Linting (Strict Enforcement)
 
@@ -11,7 +11,7 @@ The project uses `rustfmt` and `clippy` with strict configurations (`rustfmt.tom
 - **Function Arguments:** Maximum 5 arguments (`too-many-arguments-threshold = 5`). Group related parameters into a configuration or context struct.
 - **Cognitive Complexity:** Maximum 15 (`cognitive-complexity-threshold = 15`). Avoid deep nesting; use early returns and helper functions.
 - **Type Complexity:** Maximum 250 (`type-complexity-threshold = 250`). Create `type` aliases or marker structs for complex Bevy `Query` types.
-- **Documentation Ticks:** Enclose all code identifiers, types, and technical terms in backticks in doc comments (for example, `` `Transform` ``, `` `Vec3` ``). Exceptions: `Bevy`, `WGSL`, `WESL`, `GLTF`, `PBR`, `RGB`, `RGBA`, `3D`, `2D`, `Moonly`, `XRay`, `GI`, `RT`, `SSAO`, `SSDO`, `HDAO`, `HBAO`, `PCSS`, `RSM`, `HOM`, `SMAP`, `HDR10`.
+- **Documentation Ticks:** Enclose all code identifiers, types, and technical terms in backticks in doc comments (for example, `` `Transform` ``, `` `Vec3` ``). Exceptions: `Bevy`, `WGSL`, `WESL`, `GLTF`, `PBR`, `RGB`, `RGBA`, `3D`, `2D`, `Moonly`, `GI`, `RT`, `SSAO`, `SSDO`, `HDAO`, `HBAO`, `PCSS`, `RSM`, `HOM`, `SMAP`, `HDR10`.
 
 ## 2. Error Handling and Safety
 
@@ -54,7 +54,7 @@ The project uses `rustfmt` and `clippy` with strict configurations (`rustfmt.tom
 
 - **Write all shaders in WESL:** Every shader file must use the `.wesl` extension.
 - **Compile-time & test validation:** Validate all `.wesl` shader packages via `wesl` in `build.rs` and unit tests, and embed them in Bevy plugins via `embedded_asset!` or `load_shader_library!`.
-- **Faithful X-Ray Monolith Port + Configurable Extensions:** Preserve exact mathematical constants and algorithms from `xray-monolith` (`R3`/`R4` sun cascades, SMAP Guillotine allocator, 32-photon GI radiosity bounce, 64x64 hierarchical occlusion rasterizer, 64x64 5-rotation jitter shadows, PCSS, MinMax shadow depth, Activision S2016 multi-bounce colored AO, HDR10 8-operator tonemapping, Karis + Kawase + dual-wave bloom, procedural lens flare, NVG, HeatVision, and parallax scope) while exposing full runtime configuration.
+- **Faithful Monolith Port + Configurable Extensions:** Preserve exact mathematical constants and algorithms from `moonly-monolith` (`R3`/`R4` sun cascades, SMAP Guillotine allocator, 32-photon GI radiosity bounce, 64x64 hierarchical occlusion rasterizer, 64x64 5-rotation jitter shadows, PCSS, MinMax shadow depth, Activision S2016 multi-bounce colored AO, HDR10 8-operator tonemapping, Karis + Kawase + dual-wave bloom, procedural lens flare, NVG, HeatVision, and parallax scope) while exposing full runtime configuration.
 
 ## 8. Verification Protocol (Mandatory Before Finishing Any Task)
 

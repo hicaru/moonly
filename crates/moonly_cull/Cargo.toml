@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 bevy.workspace = true
 moonly_core.workspace = true
+moonly_render.workspace = true
 
 [lints]
 workspace = true

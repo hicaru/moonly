@@ -1,10 +1,11 @@
 //! Virtual GI bounce generation with Monolith and enhanced reflector models.
 
 use bevy::prelude::*;
-use moonly_core::{GiRadiosityConfig, VirtualGiLight, XRayLight, XRayLightFlags};
+use moonly_core::{GiRadiosityConfig, MoonlyLight, MoonlyLightFlags, VirtualGiLight};
 
 pub(crate) use crate::gi_intersection::raycast_all_reflectors;
-use crate::gi_sampling::{XrayRandom, enhanced_photon_dir, monolith_photon_dir};
+use crate::gi_ray::{GiRayGeometry, GiRayQuery};
+use crate::gi_sampling::{MoonlyRandom, enhanced_photon_dir, monolith_photon_dir};
 pub use crate::gi_system::update_gi_light_field;
 
 /// Minimum virtual bounce light radius in meters for the enhanced model.
@@ -64,12 +65,10 @@ pub struct GiLightField {
 }
 
 /// Generate virtual lights with the Monolith `8N` photon selection algorithm.
-///
-/// The reflector boxes replace the original triangle collision model.
-pub fn gi_generate_monolith(
-    light: &XRayLight,
+pub fn gi_generate_monolith<G: GiRayGeometry + ?Sized>(
+    light: &MoonlyLight,
     cfg: &GiRadiosityConfig,
-    reflectors: &[GiReflectorBox],
+    geometry: &G,
     out_virtual: &mut Vec<VirtualGiLight>,
 ) {
     if !valid_gi_inputs(light, cfg) {
@@ -79,23 +78,22 @@ pub fn gi_generate_monolith(
     let Some(ray_count) = cfg.num_photons.checked_mul(8) else {
         return;
     };
-    let mut random = XrayRandom::new();
+    let mut random = MoonlyRandom::new();
     for _ in 0..ray_count {
-        let Some(dir) = monolith_photon_dir(light, &mut random) else {
+        let Some(direction) = monolith_photon_dir(light, &mut random) else {
             continue;
         };
-        let Some((dist, normal, _)) =
-            raycast_all_reflectors(light.position, dir, light.range, 0.0, reflectors)
-        else {
+        let ray = GiRayQuery::new(light.position, direction, 0.0, light.range);
+        let Some(hit) = geometry.nearest_hit(ray) else {
             continue;
         };
-        let energy = normal.dot(-dir) * (1.0 - dist / light.range);
+        let energy = hit.normal.dot(-direction) * (1.0 - hit.distance / light.range);
         if !energy.is_finite() || energy < 0.0 || energy < cfg.energy_clip {
             continue;
         }
         out_virtual.push(VirtualGiLight {
-            position: light.position + dir * dist,
-            direction: dir - normal * (2.0 * dir.dot(normal)),
+            position: light.position + direction * hit.distance,
+            direction: direction - hit.normal * (2.0 * direction.dot(hit.normal)),
             color: Vec3::splat(energy),
             range: 0.0,
         });
@@ -105,7 +103,7 @@ pub fn gi_generate_monolith(
 
 /// Generate enhanced diffuse GI with albedo, broadphase pruning, and optional cosine weighting.
 pub fn gi_generate_enhanced(
-    light: &XRayLight,
+    light: &MoonlyLight,
     cfg: &GiRadiosityConfig,
     reflectors: &[GiReflectorBox],
     out_virtual: &mut Vec<VirtualGiLight>,
@@ -150,10 +148,10 @@ pub fn gi_generate_enhanced(
     }
 }
 
-fn valid_gi_inputs(light: &XRayLight, cfg: &GiRadiosityConfig) -> bool {
+fn valid_gi_inputs(light: &MoonlyLight, cfg: &GiRadiosityConfig) -> bool {
     cfg.enabled
         && cfg.num_photons > 0
-        && light.flags.contains(XRayLightFlags::GI_ENABLED)
+        && light.flags.contains(MoonlyLightFlags::GI_ENABLED)
         && light.range.is_finite()
         && light.range > 0.0
         && light.position.is_finite()
@@ -164,7 +162,7 @@ fn valid_gi_inputs(light: &XRayLight, cfg: &GiRadiosityConfig) -> bool {
 }
 
 fn normalize_monolith_lights(
-    light: &XRayLight,
+    light: &MoonlyLight,
     cfg: &GiRadiosityConfig,
     first: usize,
     out_virtual: &mut Vec<VirtualGiLight>,
@@ -206,7 +204,7 @@ fn normalize_monolith_lights(
 }
 
 fn push_virtual_bounce(
-    light: &XRayLight,
+    light: &MoonlyLight,
     cfg: &GiRadiosityConfig,
     hit: (Vec3, Vec3, f32, Vec3),
     out_virtual: &mut Vec<VirtualGiLight>,

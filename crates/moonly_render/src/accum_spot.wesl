@@ -1,0 +1,191 @@
+@group(0) @binding(0) var position_texture: texture_2d<f32>;
+@group(0) @binding(1) var normal_texture: texture_2d<f32>;
+@group(0) @binding(2) var albedo_gloss_texture: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> spot: MoonlySpotUniform;
+@group(0) @binding(4) var material_lut: texture_3d<f32>;
+@group(0) @binding(5) var material_sampler: sampler;
+@group(0) @binding(6) var shadow_atlas: texture_depth_2d;
+@group(0) @binding(7) var shadow_sampler: sampler_comparison;
+@group(0) @binding(8) var projector_texture: texture_2d<f32>;
+@group(0) @binding(9) var projector_sampler: sampler;
+@group(0) @binding(10) var jitter_texture: texture_2d_array<f32>;
+@group(0) @binding(11) var jitter_sampler: sampler;
+
+struct MoonlySpotUniform {
+    position_range: vec4<f32>,
+    direction_cos: vec4<f32>,
+    color: vec4<f32>,
+    view_position: vec4<f32>,
+    shadow_from_world: mat4x4<f32>,
+    projector_from_world: mat4x4<f32>,
+    clip_from_local: mat4x4<f32>,
+    shadow_settings: vec4<f32>,
+    shadow_transform: vec4<f32>,
+    world_from_clip: mat4x4<f32>,
+    volumetric: vec4<f32>,
+    screen_size: vec4<f32>,
+};
+
+struct SpotVertexOutput {
+    @builtin(position) position: vec4<f32>,
+};
+
+@vertex
+fn vertex(@location(0) local_position: vec3<f32>) -> SpotVertexOutput {
+    var out: SpotVertexOutput;
+    out.position = spot.clip_from_local * vec4(local_position, 1.0);
+    return out;
+}
+
+@fragment
+fn mask_fragment() -> @location(0) vec4<f32> {
+    return vec4(0.0);
+}
+
+@fragment
+fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
+    let pixel = vec2<i32>(in.position.xy);
+    let position = textureLoad(position_texture, pixel, 0);
+    if position.w < 0.5 {
+        return vec4(0.0);
+    }
+    let to_light = spot.position_range.xyz - position.xyz;
+    let distance_to_light = length(to_light);
+    if distance_to_light >= spot.position_range.w || distance_to_light <= 0.0001 {
+        return vec4(0.0);
+    }
+    let light_direction = to_light / distance_to_light;
+    let cone_cos = dot(-light_direction, normalize(spot.direction_cos.xyz));
+    let spot_cone = smoothstep(
+        spot.direction_cos.w,
+        min(spot.direction_cos.w + 0.15, 1.0),
+        cone_cos,
+    );
+    let cone = select(spot_cone, 1.0, spot.direction_cos.w < -0.999);
+    if cone <= 0.0 {
+        return vec4(0.0);
+    }
+
+    let normal_sample = textureLoad(normal_texture, pixel, 0);
+    let normal = normalize(normal_sample.xyz);
+    let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
+    let view_direction = normalize(spot.view_position.xyz - position.xyz);
+    let half_direction = normalize(light_direction + view_direction);
+    let ld = max(dot(normal, light_direction), 0.0);
+    let ls = max(dot(normal, half_direction), 0.0);
+    let response = textureSampleLevel(
+        material_lut,
+        material_sampler,
+        vec3<f32>(ld, ls, normal_sample.w),
+        0.0,
+    ).rg;
+    let attenuation = clamp(1.0 - distance_to_light / spot.position_range.w, 0.0, 1.0);
+    let diffuse = albedo_gloss.rgb * response.x;
+    let specular = vec3<f32>(response.y * albedo_gloss.a);
+    let projection = projector_color(position.xyz);
+    let radiance = spot.color.rgb * projection * (cone * attenuation * attenuation);
+    let visibility = shadow_visibility(position.xyz, in.position.xy);
+    return vec4(radiance * (diffuse + specular) * visibility, 1.0);
+}
+
+fn shadow_visibility(world_position: vec3<f32>, screen_xy: vec2<f32>) -> f32 {
+    if spot.shadow_settings.x < 0.5 {
+        return 1.0;
+    }
+    let clip = spot.shadow_from_world * vec4(world_position, 1.0);
+    if clip.w <= 0.0 {
+        return 0.0;
+    }
+    let ndc = clip.xyz / clip.w;
+    let local_uv = ndc.xy * vec2(0.5, -0.5) + vec2(0.5);
+    let receiver_depth = ndc.z - spot.shadow_settings.y;
+    let jitter_uv = screen_xy / 64.0;
+    var visibility = 0.0;
+    for (var layer = 0u; layer < 4u; layer += 1u) {
+        let jitter = textureSampleLevel(
+            jitter_texture,
+            jitter_sampler,
+            jitter_uv,
+            i32(layer),
+            0.0,
+        ).xy;
+        let sample_local = clamp(
+            local_uv + jitter * spot.shadow_settings.z,
+            vec2(0.0),
+            vec2(1.0),
+        );
+        let sample_uv = spot.shadow_transform.xy + sample_local * spot.shadow_transform.z;
+        visibility += textureSampleCompareLevel(
+            shadow_atlas,
+            shadow_sampler,
+            sample_uv,
+            receiver_depth,
+        );
+    }
+    return visibility * 0.25;
+}
+
+fn projector_color(world_position: vec3<f32>) -> vec3<f32> {
+    if spot.shadow_settings.w < 0.5 {
+        return vec3(1.0);
+    }
+    let clip = spot.projector_from_world * vec4(world_position, 1.0);
+    if clip.w <= 0.0 {
+        return vec3(0.0);
+    }
+    let ndc = clip.xy / clip.w;
+    let uv = ndc * vec2(0.5, -0.5) + vec2(0.5);
+    if any(uv < vec2(0.0)) || any(uv > vec2(1.0)) {
+        return vec3(0.0);
+    }
+    return textureSampleLevel(projector_texture, projector_sampler, uv, 0.0).rgb;
+}
+
+fn local_scattering(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32> {
+    let to_light = spot.position_range.xyz - world_position;
+    let distance = length(to_light);
+    if distance >= spot.position_range.w || distance < 0.0001 {
+        return vec3(0.0);
+    }
+    let direction = to_light / distance;
+    let cone_cos = dot(-direction, normalize(spot.direction_cos.xyz));
+    let cone = select(
+        smoothstep(spot.direction_cos.w, min(spot.direction_cos.w + 0.15, 1.0), cone_cos),
+        1.0,
+        spot.direction_cos.w < -0.999,
+    );
+    let attenuation = 1.0 - distance / spot.position_range.w;
+    let visibility = shadow_visibility(world_position, screen_xy);
+    return spot.color.rgb * projector_color(world_position)
+        * cone * attenuation * attenuation * visibility;
+}
+
+@fragment
+fn volumetric_fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
+    if spot.volumetric.x <= 0.0 {
+        return vec4(0.0);
+    }
+    let uv = in.position.xy / spot.screen_size.xy;
+    let dimensions = vec2<f32>(textureDimensions(position_texture));
+    let position = textureLoad(position_texture, vec2<i32>(uv * dimensions), 0);
+    let far = spot.world_from_clip * vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 1.0, 1.0);
+    var end_position = far.xyz / far.w;
+    if position.w > 0.5 {
+        end_position = position.xyz;
+    }
+    let ray = end_position - spot.view_position.xyz;
+    let ray_length = min(length(ray), 80.0);
+    if ray_length < 0.001 {
+        return vec4(0.0);
+    }
+    let direction = ray / max(length(ray), 0.001);
+    let steps = i32(clamp(spot.volumetric.z * 32.0, 8.0, 32.0));
+    let step_length = ray_length * spot.volumetric.y / f32(steps);
+    var scattering = vec3(0.0);
+    for (var index = 0; index < steps; index += 1) {
+        let distance = (f32(index) + 0.5) * step_length;
+        let point = spot.view_position.xyz + direction * distance;
+        scattering += local_scattering(point, in.position.xy) * step_length;
+    }
+    return vec4(scattering * spot.volumetric.x * 0.005, 1.0);
+}

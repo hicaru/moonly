@@ -1,4 +1,4 @@
-// XRay-Monolith R4 volumetric sunshafts and spot cone raymarching in WESL.
+// Moonly-Monolith R4 volumetric sunshafts and spot cone raymarching in WESL.
 
 const INV_FOUR_PI: f32 = 0.07957747154594767;
 

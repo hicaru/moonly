@@ -1,7 +1,7 @@
 //! Light visibility preparation and frame-staggered occlusion scheduling (`light_vis.cpp`).
 
 use bevy::prelude::*;
-use moonly_core::{XRayLight, XRayLightType};
+use moonly_core::{MoonlyLight, MoonlyLightType};
 
 /// World-space coordinate safety bound from `light::vis_prepare` (`10000.f`).
 pub const SAFE_WORLD_BOUND_METERS: f32 = 10_000.0;
@@ -40,7 +40,7 @@ impl Default for LightVisibilityState {
 impl LightVisibilityState {
     /// Determine whether the camera eye lies inside the light volume (`light::vis_prepare`).
     #[must_use]
-    pub fn is_eye_inside_light(light: &XRayLight, eye_pos: Vec3) -> bool {
+    pub fn is_eye_inside_light(light: &MoonlyLight, eye_pos: Vec3) -> bool {
         if !in_safe_world_bounds(eye_pos) {
             return false;
         }
@@ -50,8 +50,8 @@ impl LightVisibilityState {
             return false;
         }
         match light.light_type {
-            XRayLightType::Point | XRayLightType::Direct => true,
-            XRayLightType::Spot | XRayLightType::Omnipart => {
+            MoonlyLightType::Point | MoonlyLightType::Direct => true,
+            MoonlyLightType::Spot | MoonlyLightType::Omnipart => {
                 let dir = to_eye.normalize_or_zero();
                 let threshold = (light.cone_angle * EYE_IN_CONE_SCALE + EYE_IN_CONE_BIAS_RAD).cos();
                 dir.dot(light.direction) >= threshold
@@ -61,7 +61,7 @@ impl LightVisibilityState {
 
     /// Prepare light visibility before issuing an occlusion test (`light::vis_prepare`).
     /// Returns `true` when an occlusion test should be submitted this frame.
-    pub fn vis_prepare(&mut self, light: &XRayLight, eye_pos: Vec3, current_frame: u32) -> bool {
+    pub fn vis_prepare(&mut self, light: &MoonlyLight, eye_pos: Vec3, current_frame: u32) -> bool {
         if Self::is_eye_inside_light(light, eye_pos) {
             self.visible = true;
             self.pending = false;

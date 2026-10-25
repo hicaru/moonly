@@ -1,0 +1,77 @@
+{
+  "commit": "c57fe5b9",
+  "pipeline": "R4",
+  "gi": {
+    "kind": "cpu_triangle_ray_tracing",
+    "photons": 16,
+    "seed": 302455168,
+    "rays_per_photon": 8
+  },
+  "shader_pack": {
+    "status": "required_for_pixel_parity",
+    "included": false,
+    "missing": ["accum_*", "combine_1", "HDAO", "SSFX"]
+  },
+  "visual_acceptance": {
+    "command": "cargo run --example visual_acceptance",
+    "timestep_seconds": 0.016666666666666666,
+    "capture_frame": 45,
+    "golden_update": "manual_review_only",
+    "scenes": [
+      {
+        "name": "single_spot",
+        "reference": "reference/single-spot.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [249, 175, 89], "tolerance": 2 }
+      },
+      {
+        "name": "point_shadow",
+        "reference": "reference/point-shadow.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [199, 99, 34], "tolerance": 2 }
+      },
+      {
+        "name": "alpha_caster",
+        "reference": "reference/alpha-caster.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 550, "y": 300, "rgb": [222, 129, 56], "tolerance": 2 }
+      },
+      {
+        "name": "sun_cascades",
+        "reference": "reference/sun-cascades.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 800, "y": 550, "rgb": [154, 157, 124], "tolerance": 2 }
+      },
+      {
+        "name": "cascade_motion",
+        "reference": "reference/cascade-motion.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [247, 173, 92], "tolerance": 2 }
+      },
+      {
+        "name": "moving_casters",
+        "reference": "reference/moving-caster.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [249, 173, 88], "tolerance": 2 }
+      },
+      {
+        "name": "screen_shafts",
+        "reference": "reference/screen-shafts.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 640, "y": 60, "rgb": [50, 46, 38], "tolerance": 2 }
+      },
+      {
+        "name": "overlay",
+        "reference": "reference/overlay.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 490, "y": 375, "rgb": [222, 153, 78], "tolerance": 2 }
+      },
+      {
+        "name": "wet_environment",
+        "reference": "reference/wet-environment.png",
+        "mae_tolerance": 1.0,
+        "pixel_probe": { "x": 800, "y": 550, "rgb": [79, 80, 53], "tolerance": 2 }
+      }
+    ]
+  }
+}

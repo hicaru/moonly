@@ -1,8 +1,11 @@
-//! Master runtime configuration for the Moonly XRay-Monolith lighting plugin.
+//! Master runtime configuration for the Moonly Moonly-Monolith lighting plugin.
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+};
 
-/// Default shadow map atlas resolution from `xray-monolith` (`c_smap_pool_size`).
+/// Default shadow map atlas resolution from `moonly-monolith` (`c_smap_pool_size`).
 pub const DEFAULT_SMAP_POOL_SIZE: u32 = 2048;
 
 /// Default near sun cascade split distance in meters (`c_sun_near_distance`).
@@ -18,7 +21,7 @@ pub const DEFAULT_SUN_FAR_METERS: f32 = 180.0;
 pub const DEFAULT_SUN_DIAGONAL_OFFSET_METERS: f32 = 600.0;
 
 /// Default photon count per GI bounce (`gi_num_photons`).
-pub const DEFAULT_GI_PHOTONS: u32 = 32;
+pub const DEFAULT_GI_PHOTONS: u32 = 16;
 
 /// Minimum ray hit distance for GI bounce (`gi_clip`).
 pub const DEFAULT_GI_CLIP_METERS: f32 = 0.001;
@@ -29,26 +32,26 @@ pub const DEFAULT_GI_REFLECTIVITY: f32 = 0.9;
 /// Minimum virtual light energy threshold (`ps_r2_ls_dlights_clip`).
 pub const DEFAULT_DLIGHTS_CLIP: f32 = 0.015;
 
-/// Overall pipeline mode matching `xray-monolith` tiers or Moonly enhancements.
+/// Overall pipeline mode matching `moonly-monolith` tiers or Moonly enhancements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 pub enum MoonlyPipelineTier {
-    /// XRay-Monolith R2 CPU lighting and resource baseline.
+    /// Moonly-Monolith R2 CPU lighting and resource baseline.
     ClassicR2,
-    /// XRay-Monolith R3 CPU shadow, GI, and post-processing settings.
+    /// Moonly-Monolith R3 CPU shadow, GI, and post-processing settings.
     MonolithR3,
-    /// XRay-Monolith R4 CPU shadow, GI, and post-processing settings.
+    /// Moonly-Monolith R4 CPU shadow, GI, and post-processing settings.
     #[default]
     MonolithR4,
     /// Enhanced Moonly mode with BSSF atlas packing, importance-sampled GI, and PCSS.
     MoonlyEnhanced,
 }
 
-/// Shadow filtering mode from `xray-monolith` and Moonly extensions.
+/// Shadow filtering mode from `moonly-monolith` and Moonly extensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 pub enum ShadowFilterMode {
     /// Hardware 2x2 PCF lookup.
     HardwarePcf,
-    /// Faithful XRay-Monolith 64x64 5-rotation jittered shadow filter (`TEX_jitter`).
+    /// Faithful Moonly-Monolith 64x64 5-rotation jittered shadow filter (`TEX_jitter`).
     #[default]
     MonolithJitter64,
     /// MinMax 4x4 shadow map acceleration (`SE_SUN_NEAR_MINMAX`).
@@ -71,6 +74,39 @@ pub enum AmbientOcclusionMode {
     ActivisionColoredAo,
     /// Screen-Space Directional Occlusion with indirect bounce tint.
     EnhancedSsdo,
+}
+
+/// Screen-space occlusion sampling and intensity settings.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Reflect)]
+#[reflect(Resource)]
+pub struct AmbientOcclusionSettings {
+    /// World-space sampling and rejection radius in meters.
+    pub reject_radius: f32,
+    /// Minimum accepted occlusion distance in meters.
+    pub accept_radius: f32,
+    /// Occlusion intensity multiplier.
+    pub intensity: f32,
+    /// Directional indirect bounce strength for SSDO.
+    pub ssdo_bounce_strength: f32,
+}
+
+impl Default for AmbientOcclusionSettings {
+    fn default() -> Self {
+        Self {
+            reject_radius: 0.45,
+            accept_radius: 0.03,
+            intensity: 1.15,
+            ssdo_bounce_strength: 0.65,
+        }
+    }
+}
+
+impl ExtractResource<RenderApp> for AmbientOcclusionSettings {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        *source
+    }
 }
 
 /// Sun cascade configuration matching `r2_R_sun.cpp`.
@@ -165,6 +201,14 @@ pub struct MoonlyConfig {
     pub enable_smapvis: bool,
 }
 
+impl ExtractResource<RenderApp> for MoonlyConfig {
+    type Source = Self;
+
+    fn extract_resource(source: &Self::Source) -> Self {
+        source.clone()
+    }
+}
+
 impl Default for MoonlyConfig {
     fn default() -> Self {
         Self {
@@ -183,6 +227,23 @@ impl Default for MoonlyConfig {
 }
 
 impl MoonlyConfig {
+    /// Create a configuration preset for the original Moonly R4 behavior.
+    #[must_use]
+    pub fn moonly_r4() -> Self {
+        Self {
+            tier: MoonlyPipelineTier::MonolithR4,
+            smap_pool_size: DEFAULT_SMAP_POOL_SIZE,
+            shadow_filter: ShadowFilterMode::MonolithJitter64,
+            ao_mode: AmbientOcclusionMode::Hdao,
+            sun_cascades: SunCascadeConfig::default(),
+            gi: GiRadiosityConfig::default(),
+            specular_quality: 1.0,
+            rain_wetness: 0.0,
+            enable_occ_rasterizer: true,
+            enable_smapvis: true,
+        }
+    }
+
     /// Create a configuration preset for the enhanced Moonly mode.
     #[must_use]
     pub fn enhanced() -> Self {
@@ -195,5 +256,19 @@ impl MoonlyConfig {
         };
         cfg.gi.cosine_weighted = true;
         cfg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn moonly_r4_preset_uses_original_photon_count() {
+        let config = MoonlyConfig::moonly_r4();
+        assert_eq!(config.tier, MoonlyPipelineTier::MonolithR4);
+        assert_eq!(config.gi.num_photons, 16);
+        assert!(!config.gi.cosine_weighted);
+        assert_eq!(config.shadow_filter, ShadowFilterMode::MonolithJitter64);
     }
 }

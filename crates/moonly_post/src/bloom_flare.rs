@@ -22,7 +22,7 @@ pub fn karis_box4_average(c0: Vec3, c1: Vec3, c2: Vec3, c3: Vec3) -> Vec3 {
     avg * karis_weight(avg)
 }
 
-/// Combine five box groups with the normalized Karis average from XRay-Monolith.
+/// Combine five box groups with the normalized Karis average from Moonly-Monolith.
 #[must_use]
 pub fn karis_group5_average(groups: [Vec3; 5]) -> Vec3 {
     let mut weighted = Vec3::ZERO;

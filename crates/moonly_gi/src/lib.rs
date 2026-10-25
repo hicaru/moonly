@@ -2,12 +2,19 @@
 
 pub mod ambient_occlusion;
 pub mod gi_bounce;
+mod gi_bvh;
+mod gi_cache;
+mod gi_geometry;
 mod gi_intersection;
+mod gi_ray;
 mod gi_sampling;
 mod gi_system;
+mod light_tracking;
 
 use bevy::{asset::embedded_asset, prelude::*};
-use moonly_core::MoonlySystemSet;
+use moonly_core::{MoonlySystemSet, VirtualGiLightPackage};
+
+use crate::gi_geometry::collect_static_gi_geometry;
 
 pub use crate::{
     ambient_occlusion::{
@@ -18,6 +25,10 @@ pub use crate::{
         GiLightField, GiReflectorBox, MIN_VIRTUAL_GI_RADIUS_METERS, SPOT_GI_CONE_SCALE,
         gi_generate_enhanced, gi_generate_monolith, update_gi_light_field,
     },
+    gi_bvh::{GiTriangle, GiTriangleBvh},
+    gi_cache::GiLightCache,
+    gi_geometry::{MoonlyGiCaster, StaticGiGeometry},
+    gi_ray::{GiRayGeometry, GiRayHit, GiRayQuery},
 };
 
 /// Raw WESL source for `gi.wesl`.
@@ -33,13 +44,23 @@ impl Plugin for MoonlyGiPlugin {
             embedded_asset!(app, "gi.wesl");
         }
         app.register_type::<GiReflectorBox>()
+            .register_type::<MoonlyGiCaster>()
             .register_type::<GiLightField>()
             .register_type::<AmbientOcclusionSettings>()
             .init_resource::<GiLightField>()
+            .init_resource::<VirtualGiLightPackage>()
+            .init_resource::<GiLightCache>()
+            .init_resource::<StaticGiGeometry>()
             .init_resource::<AmbientOcclusionSettings>()
             .add_systems(
                 PostUpdate,
-                update_gi_light_field.in_set(MoonlySystemSet::UpdateShadowsAndGi),
+                (
+                    collect_static_gi_geometry,
+                    light_tracking::update_light_tracking,
+                    update_gi_light_field,
+                )
+                    .chain()
+                    .in_set(MoonlySystemSet::UpdateShadowsAndGi),
             );
     }
 }
@@ -47,11 +68,11 @@ impl Plugin for MoonlyGiPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonly_core::{GiRadiosityConfig, XRayLight};
+    use moonly_core::{GiRadiosityConfig, MoonlyLight};
 
     #[test]
     fn gi_generate_spawns_virtual_bounce_lights_on_reflector() {
-        let light = XRayLight::spot(
+        let light = MoonlyLight::spot(
             Vec3::new(0.0, 2.0, 0.0),
             Vec3::NEG_Y,
             Vec3::new(4.0, 3.0, 2.0),

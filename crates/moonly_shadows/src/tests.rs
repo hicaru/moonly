@@ -1,6 +1,6 @@
 use moonly_core::{
-    LightPackage, MoonlyConfig, SunCascadeConfig, WeatherEnvironment, XRayLight, XRayLightFlags,
-    XRayLightType,
+    LightPackage, MoonlyConfig, MoonlyLight, MoonlyLightFlags, MoonlyLightType, SunCascadeConfig,
+    WeatherEnvironment,
 };
 
 use super::*;
@@ -11,6 +11,7 @@ fn shadow_app(config: MoonlyConfig) -> App {
         .init_resource::<WeatherEnvironment>()
         .init_resource::<LightPackage>()
         .init_resource::<SmapAllocator>()
+        .init_resource::<LocalShadowBatches>()
         .init_resource::<SunCascades>()
         .init_resource::<RainShadowState>()
         .add_systems(Update, update_shadow_cascades_and_atlas);
@@ -36,12 +37,12 @@ fn spawn_camera(app: &mut App, cam: CameraFrustumParams, is_active: bool, order:
         .id()
 }
 
-fn spot_with_size(size: u16) -> XRayLight {
-    XRayLight {
-        light_type: XRayLightType::Spot,
-        flags: XRayLightFlags::SHADOW,
+fn spot_with_size(size: u16) -> MoonlyLight {
+    MoonlyLight {
+        light_type: MoonlyLightType::Spot,
+        flags: MoonlyLightFlags::SHADOW,
         smap_size_override: size,
-        ..XRayLight::default()
+        ..MoonlyLight::default()
     }
 }
 
@@ -120,7 +121,7 @@ fn bssf_allocator_packs_mixed_sizes_efficiently() {
 
 #[test]
 fn spot_shadow_xform_applies_one_percent_hysteresis() {
-    let light = XRayLight::spot(Vec3::new(0.0, 4.0, 0.0), Vec3::NEG_Y, Vec3::ONE, 15.0, 1.0);
+    let light = MoonlyLight::spot(Vec3::new(0.0, 4.0, 0.0), Vec3::NEG_Y, Vec3::ONE, 15.0, 1.0);
     let first = SpotShadowXform::compute_xf_spot(&light, Vec3::ZERO, 2048, 0);
     let second =
         SpotShadowXform::compute_xf_spot(&light, Vec3::new(0.01, 0.0, 0.0), 2048, first.smap_size);
@@ -171,10 +172,10 @@ fn shadow_update_uses_active_camera_and_computes_rain() {
     spawn_camera(&mut app, selected, true, 2);
     app.world_mut()
         .resource_mut::<LightPackage>()
-        .push(XRayLight {
-            light_type: XRayLightType::Direct,
+        .push(MoonlyLight {
+            light_type: MoonlyLightType::Direct,
             direction: Vec3::NEG_Y,
-            ..XRayLight::default()
+            ..MoonlyLight::default()
         });
 
     app.update();
@@ -202,7 +203,7 @@ fn shadow_update_uses_active_camera_and_computes_rain() {
 #[test]
 fn shadow_update_preserves_previous_smap_size_for_hysteresis() {
     let mut app = shadow_app(MoonlyConfig::default());
-    let light = XRayLight::spot(Vec3::ZERO, Vec3::NEG_Y, Vec3::ONE, 15.0, 1.0);
+    let light = MoonlyLight::spot(Vec3::ZERO, Vec3::NEG_Y, Vec3::ONE, 15.0, 1.0);
     app.world_mut()
         .resource_mut::<LightPackage>()
         .push(light.clone());
@@ -218,10 +219,11 @@ fn shadow_update_preserves_previous_smap_size_for_hysteresis() {
     app.update();
     let first = app
         .world()
-        .resource::<SmapAllocator>()
-        .allocated
+        .resource::<LocalShadowBatches>()
+        .active()
         .first()
-        .map(SmapRect::width);
+        .and_then(|batch| batch.views.first())
+        .map(|view| view.rect.width());
     assert_eq!(first, Some(1024));
 
     app.world_mut()
@@ -231,10 +233,11 @@ fn shadow_update_preserves_previous_smap_size_for_hysteresis() {
 
     let second = app
         .world()
-        .resource::<SmapAllocator>()
-        .allocated
+        .resource::<LocalShadowBatches>()
+        .active()
         .first()
-        .map(SmapRect::width);
+        .and_then(|batch| batch.views.first())
+        .map(|view| view.rect.width());
     assert_eq!(second, first);
     let without_history =
         SpotShadowXform::compute_xf_spot(&light, Vec3::new(15.02, 0.0, 0.0), 2048, 0);
@@ -242,7 +245,7 @@ fn shadow_update_preserves_previous_smap_size_for_hysteresis() {
 }
 
 #[test]
-fn shadow_update_observes_atlas_allocation_failures() {
+fn shadow_update_overflow_creates_additional_batches() {
     let config = MoonlyConfig {
         smap_pool_size: 128,
         ..MoonlyConfig::default()
@@ -256,9 +259,9 @@ fn shadow_update_observes_atlas_allocation_failures() {
     spawn_camera(&mut app, CameraFrustumParams::default(), true, 0);
     app.update();
 
-    let allocator = app.world().resource::<SmapAllocator>();
-    assert_eq!(allocator.allocated.len(), 4);
-    assert_eq!(allocator.failed_allocations, 1);
+    let batches = app.world().resource::<LocalShadowBatches>();
+    assert_eq!(batches.view_count(), 5);
+    assert!(batches.batch_count() > 1);
 }
 
 #[test]

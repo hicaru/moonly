@@ -1,7 +1,7 @@
 use super::{OCC_DIM_0, OCC_DIM_1, OCC_DIM_2, OCC_DIM_3, OccRasterizer, OccTestRect, df_2_s32};
 
 impl OccRasterizer {
-    /// Faithful XRay-Monolith hierarchical occlusion test (`occRasterizer::test`).
+    /// Faithful Moonly-Monolith hierarchical occlusion test (`occRasterizer::test`).
     /// Returns `-1` when fully occluded and `1` when at least one sample is visible.
     #[must_use]
     pub fn test_monolith(&self, rect: OccTestRect) -> i32 {
