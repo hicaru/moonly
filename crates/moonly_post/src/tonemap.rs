@@ -93,9 +93,10 @@ impl ExtractResource<RenderApp> for Hdr10PostConfig {
 }
 
 /// Evaluate the selected `TonemapOperator` on a linear RGB color (`hdr10.h`).
+#[inline]
 #[must_use]
 pub fn evaluate_tonemap_cpu(rgb: Vec3, op: TonemapOperator) -> Vec3 {
-    let x = rgb.max(Vec3::ZERO);
+    let x = Vec3::new(rgb.x.max(0.0), rgb.y.max(0.0), rgb.z.max(0.0));
     match op {
         TonemapOperator::ClassicMoonly => reinhard_whitepoint(x, MOONLY_CLASSIC_WHITEPOINT_SQ),
         TonemapOperator::ExtendedReinhardW2 => reinhard_whitepoint(x, 4.0),
@@ -109,31 +110,36 @@ pub fn evaluate_tonemap_cpu(rgb: Vec3, op: TonemapOperator) -> Vec3 {
     }
 }
 
+#[inline]
 fn reinhard_whitepoint(x: Vec3, wp_sq: f32) -> Vec3 {
-    ((x * (Vec3::ONE + x / wp_sq)) / (x + Vec3::ONE)).clamp(Vec3::ZERO, Vec3::ONE)
+    let inv_wp = wp_sq.recip();
+    let f = |c: f32| ((c * (1.0 + c * inv_wp)) / (c + 1.0)).clamp(0.0, 1.0);
+    Vec3::new(f(x.x), f(x.y), f(x.z))
 }
 
+#[inline]
 fn aces_narkowicz(x: Vec3) -> Vec3 {
-    let num = x * (2.51 * x + Vec3::splat(0.03));
-    let den = x * (2.43 * x + Vec3::splat(0.59)) + Vec3::splat(0.14);
-    (num / den).clamp(Vec3::ZERO, Vec3::ONE)
+    let f = |c: f32| ((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14)).clamp(0.0, 1.0);
+    Vec3::new(f(x.x), f(x.y), f(x.z))
 }
 
+#[inline]
+fn aces_rrt_scalar(v: f32) -> f32 {
+    let a = v * (v + 0.024_578_6) - 0.000_090_537;
+    let b = v * (0.983_729 * v + 0.432_951) + 0.238_081;
+    a / b
+}
+
+#[inline]
 fn aces_hill(x: Vec3) -> Vec3 {
-    let v = Vec3::new(
-        0.59719 * x.x + 0.35458 * x.y + 0.04823 * x.z,
-        0.07600 * x.x + 0.90834 * x.y + 0.01566 * x.z,
-        0.02840 * x.x + 0.13383 * x.y + 0.83777 * x.z,
-    );
-    let a = v * (v + Vec3::splat(0.024_578_6)) - Vec3::splat(0.000_090_537);
-    let b = v * (0.983_729 * v + Vec3::splat(0.432_951)) + Vec3::splat(0.238_081);
-    let rrt = a / b;
-    let out = Vec3::new(
-        1.604_75 * rrt.x - 0.531_08 * rrt.y - 0.073_67 * rrt.z,
-        -0.102_08 * rrt.x + 1.108_13 * rrt.y - 0.006_05 * rrt.z,
-        -0.003_27 * rrt.x - 0.072_76 * rrt.y + 1.076_02 * rrt.z,
-    );
-    out.clamp(Vec3::ZERO, Vec3::ONE)
+    let r = aces_rrt_scalar(0.59719 * x.x + 0.35458 * x.y + 0.04823 * x.z);
+    let g = aces_rrt_scalar(0.07600 * x.x + 0.90834 * x.y + 0.01566 * x.z);
+    let b = aces_rrt_scalar(0.02840 * x.x + 0.13383 * x.y + 0.83777 * x.z);
+    Vec3::new(
+        (1.604_75 * r - 0.531_08 * g - 0.073_67 * b).clamp(0.0, 1.0),
+        (-0.102_08 * r + 1.108_13 * g - 0.006_05 * b).clamp(0.0, 1.0),
+        (-0.003_27 * r - 0.072_76 * g + 1.076_02 * b).clamp(0.0, 1.0),
+    )
 }
 
 fn uchimura_curve(x: Vec3) -> Vec3 {
@@ -191,32 +197,49 @@ fn uncharted2_hable(x: Vec3) -> Vec3 {
     (curr * white_scale).clamp(Vec3::ZERO, Vec3::ONE)
 }
 
+#[inline]
 fn agx_curve(x: Vec3) -> Vec3 {
-    let inset = Vec3::new(
-        0.842_479_06 * x.x + 0.078_433_6 * x.y + 0.079_223_75 * x.z,
-        0.042_328_24 * x.x + 0.878_468_64 * x.y + 0.079_166_13 * x.z,
-        0.042_375_65 * x.x + 0.078_433_6 * x.y + 0.879_143 * x.z,
-    )
-    .max(Vec3::splat(1.0e-10));
-    let min_ev = -12.473_93_f32;
-    let max_ev = 4.026_069_f32;
-    let ev = Vec3::new(inset.x.log2(), inset.y.log2(), inset.z.log2());
-    let t = ((ev - Vec3::splat(min_ev)) / (max_ev - min_ev)).clamp(Vec3::ZERO, Vec3::ONE);
-    let sig = agx_sigmoid_poly(t);
-    let out = Vec3::new(
-        1.196_879 * sig.x - 0.098_020_88 * sig.y - 0.099_029_75 * sig.z,
-        -0.052_896_85 * sig.x + 1.151_903_1 * sig.y - 0.098_961_18 * sig.z,
-        -0.052_971_63 * sig.x - 0.098_043_45 * sig.y + 1.151_073_6 * sig.z,
-    )
-    .max(Vec3::ZERO);
-    Vec3::new(out.x.powf(2.2), out.y.powf(2.2), out.z.powf(2.2)).clamp(Vec3::ZERO, Vec3::ONE)
+    let ix = (0.842_479_06 * x.x + 0.078_433_6 * x.y + 0.079_223_75 * x.z).max(1.0e-10);
+    let iy = (0.042_328_24 * x.x + 0.878_468_64 * x.y + 0.079_166_13 * x.z).max(1.0e-10);
+    let iz = (0.042_375_65 * x.x + 0.078_433_6 * x.y + 0.879_143 * x.z).max(1.0e-10);
+    let sx = agx_ev_sigmoid(ix);
+    let sy = agx_ev_sigmoid(iy);
+    let sz = agx_ev_sigmoid(iz);
+    let ox = (1.196_879 * sx - 0.098_020_88 * sy - 0.099_029_75 * sz).max(0.0);
+    let oy = (-0.052_896_85 * sx + 1.151_903_1 * sy - 0.098_961_18 * sz).max(0.0);
+    let oz = (-0.052_971_63 * sx - 0.098_043_45 * sy + 1.151_073_6 * sz).max(0.0);
+    Vec3::new(pow_gamma_22(ox), pow_gamma_22(oy), pow_gamma_22(oz))
 }
 
-fn agx_sigmoid_poly(x: Vec3) -> Vec3 {
-    let x2 = x * x;
-    let x4 = x2 * x2;
-    15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x
-        - Vec3::splat(0.00232)
+#[inline]
+fn agx_ev_sigmoid(c: f32) -> f32 {
+    const MIN_EV: f32 = -12.473_93;
+    const INV_SPAN: f32 = 1.0 / (4.026_069 - MIN_EV);
+    let t = ((c.log2() - MIN_EV) * INV_SPAN).clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t4 = t2 * t2;
+    15.5 * t4 * t2 - 40.14 * t4 * t + 31.96 * t4 - 6.868 * t2 * t + 0.4298 * t2 + 0.1191 * t
+        - 0.00232
+}
+
+#[inline]
+fn pow_gamma_22(c: f32) -> f32 {
+    if c <= 0.0 {
+        0.0
+    } else {
+        (c.log2() * 2.2).exp2().clamp(0.0, 1.0)
+    }
+}
+
+#[inline]
+fn pq_channel(c: f32, scale: f32) -> f32 {
+    let y = (c * scale).clamp(0.0, 1.0);
+    if y <= 0.0 {
+        return 0.0;
+    }
+    let ym1 = (y.log2() * 0.159_301_76).exp2();
+    let ratio = (0.835_937_5 + 18.851_563 * ym1) / (1.0 + 18.687_5 * ym1);
+    (ratio.log2() * 78.843_75).exp2()
 }
 
 fn smoothstep_scalar(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -225,17 +248,13 @@ fn smoothstep_scalar(edge0: f32, edge1: f32, x: f32) -> f32 {
 }
 
 /// Encode linear Rec.2020 luminance into ST.2084 Perceptual Quantizer (`HDR10_ToPQ` in `hdr10.h`).
+#[inline]
 #[must_use]
 pub fn encode_pq_st2084(linear_rgb: Vec3, max_nits: f32) -> Vec3 {
-    let m1 = 0.159_301_76_f32;
-    let m2 = 78.843_75_f32;
-    let c1 = 0.835_937_5_f32;
-    let c2 = 18.851_563_f32;
-    let c3 = 18.687_5_f32;
-    let y = (linear_rgb * (max_nits / 10_000.0)).clamp(Vec3::ZERO, Vec3::ONE);
-    let ym1 = Vec3::new(y.x.powf(m1), y.y.powf(m1), y.z.powf(m1));
-    let num = Vec3::splat(c1) + c2 * ym1;
-    let den = Vec3::ONE + c3 * ym1;
-    let ratio = num / den;
-    Vec3::new(ratio.x.powf(m2), ratio.y.powf(m2), ratio.z.powf(m2))
+    let scale = max_nits * 0.000_1;
+    Vec3::new(
+        pq_channel(linear_rgb.x, scale),
+        pq_channel(linear_rgb.y, scale),
+        pq_channel(linear_rgb.z, scale),
+    )
 }
