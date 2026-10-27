@@ -59,6 +59,7 @@ pub(crate) fn render_systems() -> impl IntoScheduleConfigs<ScheduleSystem, ()> {
         )
             .chain()
             .in_set(MoonlyRenderSystems::PostProcess),
+        bevy::ui_render::render_pass::ui_pass.in_set(MoonlyRenderSystems::Ui),
     )
         .chain()
 }

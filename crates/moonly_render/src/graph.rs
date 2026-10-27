@@ -34,6 +34,7 @@ pub enum MoonlyRenderSystems {
     ExternalFogComposite,
     MainPass,
     PostProcess,
+    Ui,
 }
 
 pub(crate) fn base_schedule() -> Schedule {
@@ -50,6 +51,7 @@ pub(crate) fn base_schedule() -> Schedule {
             MoonlyRenderSystems::ExternalFogComposite,
             MoonlyRenderSystems::MainPass,
             MoonlyRenderSystems::PostProcess,
+            MoonlyRenderSystems::Ui,
         )
             .chain(),
     );
