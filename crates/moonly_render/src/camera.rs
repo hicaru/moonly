@@ -46,18 +46,33 @@ pub struct MoonlyCamera {
 }
 
 fn on_insert_moonly_camera(mut world: DeferredWorld, context: HookContext) {
+    configure_moonly_camera(&mut world, context.entity);
+}
+
+pub(crate) fn sync_moonly_camera_roles(world: &mut World) {
+    let cameras: Box<[Entity]> = world
+        .query_filtered::<Entity, (Changed<MoonlyCamera>, Without<Added<MoonlyCamera>>)>()
+        .iter(world)
+        .collect();
+    for entity in cameras {
+        configure_moonly_camera(world, entity);
+    }
+}
+
+fn configure_moonly_camera(world: &mut World, entity: Entity) {
     let forward = world
         .get_resource::<moonly_core::MoonlyNativeForward>()
         .is_some_and(|settings| settings.0);
     let native = world
         .get_resource::<moonly_core::MoonlyNativePost>()
         .is_some_and(|settings| settings.0);
-    let deferred = world.get::<DeferredPrepass>(context.entity).is_some();
+    let deferred = world.get::<DeferredPrepass>(entity).is_some();
     let isolated = world
-        .get::<MoonlyCamera>(context.entity)
+        .get::<MoonlyCamera>(entity)
         .is_some_and(|camera| camera.role == MoonlyCameraRole::Overlay);
-    let mut commands = world.commands();
-    let mut entity = commands.entity(context.entity);
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
     if forward {
         entity.insert((CameraRenderGraph::new(Core3d), EarlyLightCulling));
         entity.remove::<IsolatedMainTexture>();
@@ -197,5 +212,27 @@ impl ExtractComponent<RenderApp> for MoonlyExternalFog {
 
     fn extract_component(item: QueryItem<Self::QueryData>) -> Option<Self::Out> {
         Some(*item)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_changes_update_texture_isolation() {
+        let mut world = World::new();
+        let entity = world.spawn(MoonlyCamera::default()).id();
+        assert!(world.get::<IsolatedMainTexture>(entity).is_none());
+        if let Some(mut camera) = world.get_mut::<MoonlyCamera>(entity) {
+            camera.role = MoonlyCameraRole::Overlay;
+        }
+        sync_moonly_camera_roles(&mut world);
+        assert!(world.get::<IsolatedMainTexture>(entity).is_some());
+        if let Some(mut camera) = world.get_mut::<MoonlyCamera>(entity) {
+            camera.role = MoonlyCameraRole::World;
+        }
+        sync_moonly_camera_roles(&mut world);
+        assert!(world.get::<IsolatedMainTexture>(entity).is_none());
     }
 }

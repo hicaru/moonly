@@ -27,7 +27,7 @@ use crate::{
     view_targets::{GBUFFER_FORMAT, MoonlyViewTargets},
 };
 
-#[derive(ShaderType)]
+#[derive(ShaderType, Default)]
 pub(crate) struct MoonlySunUniform {
     view_position: Vec4,
     view_forward: Vec4,

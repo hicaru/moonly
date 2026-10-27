@@ -13,12 +13,12 @@ use bevy::{
 use crate::phase::{MoonlyAlphaMask3d, MoonlyOpaque3d, MoonlyShadow3d};
 use crate::{
     MoonlyRender, accumulate, ao, bloom, camera, caster_visibility, combine, depth_copy,
-    diagnostics, extraction, forward_lighting, forward_prepare, froxel_pass, gpu_timer, graph,
-    jitter, light_packages, light_volume, luminance, material_adapters, material_lut,
-    mesh_bind_groups, mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post, projector, queue,
-    render_passes, settings, shaders, shadow_bind_groups, shadow_pipeline, shadow_queue,
-    shadow_targets, spot_pipeline, sun_accumulate, surface, transmission, view_targets,
-    volumetrics,
+    diagnostics, extraction, forward_layout, forward_lighting, forward_prepare, froxel_pass,
+    gpu_timer, graph, jitter, light_packages, light_volume, luminance, material_adapters,
+    material_lut, mesh_bind_groups, mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post,
+    projector, queue, render_passes, settings, shaders, shadow_bind_groups, shadow_pipeline,
+    shadow_queue, shadow_targets, spot_pipeline, sun_accumulate, surface, transmission,
+    view_targets, volumetrics,
 };
 
 pub(crate) fn configure_shader_assets(app: &mut App) {
@@ -74,7 +74,7 @@ pub(crate) fn configure_render_app(render_app: &mut SubApp) {
             )
                 .run_if(settings::native_forward_disabled),
         )
-        .add_systems(RenderStartup, forward_lighting::init_forward_layout)
+        .add_systems(RenderStartup, forward_layout::init_forward_layout)
         .add_systems(
             RenderStartup,
             (

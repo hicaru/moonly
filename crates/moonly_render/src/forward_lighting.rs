@@ -12,21 +12,22 @@ use bevy::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType,
-            TextureSampleType, UniformBuffer,
-            binding_types::{sampler, storage_buffer_read_only_sized, texture_2d, uniform_buffer},
+            BindGroup, BindGroupEntries, PipelineCache, ShaderType, TextureView, UniformBuffer,
         },
         renderer::{RenderDevice, RenderQueue},
+        view::ExtractedView,
     },
 };
 use moonly_core::{
-    LightPackage, MoonlyLight, MoonlyLightFlags, MoonlyLightType, WeatherEnvironment,
+    LightPackage, MoonlyLight, MoonlyLightFlags, MoonlyLightType, MoonlySunPackage,
+    WeatherEnvironment,
 };
 
 use crate::{
+    forward_layout::{MoonlyForwardLayout, MoonlyForwardParams},
     light_packages::MoonlyViewLightPackage,
     shadow_targets::{MoonlyShadowSample, MoonlySpotShadowTarget},
+    sun_accumulate::MoonlySunUniform,
 };
 
 #[derive(ShaderType, Clone, Copy)]
@@ -40,16 +41,11 @@ pub(crate) struct MoonlyForwardLight {
     misc: Vec4,
 }
 
-#[derive(ShaderType, Clone, Copy)]
-struct MoonlyForwardParams {
-    ambient: Vec4,
-    counts: UVec4,
-}
-
 #[derive(Component)]
 pub struct MoonlyForwardView {
     lights: bevy::render::render_resource::StorageBuffer<Vec<MoonlyForwardLight>>,
     params: UniformBuffer<MoonlyForwardParams>,
+    sun: UniformBuffer<MoonlySunUniform>,
     bind_group: Option<BindGroup>,
 }
 
@@ -61,6 +57,7 @@ impl Default for MoonlyForwardView {
                 ambient: Vec4::ZERO,
                 counts: UVec4::ZERO,
             }),
+            sun: UniformBuffer::from(MoonlySunUniform::default()),
             bind_group: None,
         }
     }
@@ -73,49 +70,6 @@ impl MoonlyForwardView {
     }
 }
 
-#[derive(Resource)]
-pub(crate) struct MoonlyForwardLayout {
-    layout: BindGroupLayoutDescriptor,
-    shadow_sampler: Sampler,
-}
-
-impl MoonlyForwardLayout {
-    fn new(device: &RenderDevice) -> Self {
-        Self {
-            layout: moonly_forward_layout(),
-            shadow_sampler: device.create_sampler(&SamplerDescriptor {
-                compare: Some(bevy::render::render_resource::CompareFunction::LessEqual),
-                ..default()
-            }),
-        }
-    }
-}
-
-pub(crate) fn init_forward_layout(mut commands: Commands, device: Res<RenderDevice>) {
-    commands.insert_resource(MoonlyForwardLayout::new(&device));
-}
-
-#[must_use]
-pub fn moonly_forward_layout() -> BindGroupLayoutDescriptor {
-    moonly_forward_layout_for(ShaderStages::FRAGMENT)
-}
-
-#[must_use]
-pub fn moonly_forward_layout_for(stage: ShaderStages) -> BindGroupLayoutDescriptor {
-    BindGroupLayoutDescriptor::new(
-        "moonly_forward_layout",
-        &BindGroupLayoutEntries::sequential(
-            stage,
-            (
-                storage_buffer_read_only_sized(false, None),
-                uniform_buffer::<MoonlyForwardParams>(false),
-                texture_2d(TextureSampleType::Depth),
-                sampler(SamplerBindingType::Comparison),
-            ),
-        ),
-    )
-}
-
 pub(crate) type ForwardViewQuery<'w, 's> = Query<
     'w,
     's,
@@ -123,6 +77,7 @@ pub(crate) type ForwardViewQuery<'w, 's> = Query<
         Entity,
         &'static MoonlyViewLightPackage,
         &'static MoonlySpotShadowTarget,
+        &'static ExtractedView,
         Option<&'static mut MoonlyForwardView>,
     ),
     With<crate::MoonlyCamera>,
@@ -134,24 +89,29 @@ pub(crate) struct ForwardPrepareInputs<'w> {
     pub(crate) queue: Res<'w, RenderQueue>,
     pub(crate) layout: Res<'w, MoonlyForwardLayout>,
     pub(crate) environment: Res<'w, WeatherEnvironment>,
-    pub(crate) cache: Res<'w, bevy::render::render_resource::PipelineCache>,
+    pub(crate) cache: Res<'w, PipelineCache>,
+    pub(crate) cascades: Res<'w, MoonlySunPackage>,
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Render preparation requires these resources"
-)]
+pub(crate) struct ForwardBindings<'a> {
+    pub(crate) device: &'a RenderDevice,
+    pub(crate) queue: &'a RenderQueue,
+    pub(crate) layout: &'a MoonlyForwardLayout,
+    pub(crate) cache: &'a PipelineCache,
+    pub(crate) environment: &'a WeatherEnvironment,
+    pub(crate) camera: &'a ExtractedView,
+    pub(crate) package: &'a LightPackage,
+    pub(crate) shadows: &'a MoonlySpotShadowTarget,
+    pub(crate) cascades: &'a MoonlySunPackage,
+}
+
 pub(crate) fn fill_forward_view(
     view: &mut MoonlyForwardView,
-    device: &RenderDevice,
-    queue: &RenderQueue,
-    layout: &MoonlyForwardLayout,
-    cache: &bevy::render::render_resource::PipelineCache,
-    environment: &WeatherEnvironment,
-    package: &LightPackage,
-    shadows: &MoonlySpotShadowTarget,
-    depth: Option<&bevy::render::render_resource::TextureView>,
+    bindings: &ForwardBindings,
+    depth: Option<&TextureView>,
 ) {
+    let package = bindings.package;
+    let shadows = bindings.shadows;
     let lights: Vec<MoonlyForwardLight> = package
         .v_point
         .iter()
@@ -165,23 +125,51 @@ pub(crate) fn fill_forward_view(
                 .map(|light| forward_light(light, None)),
         )
         .collect();
-    let count = lights.len() as u32;
-    view.lights.set(lights);
-    view.lights.write_buffer(device, queue);
-    view.params = UniformBuffer::from(MoonlyForwardParams {
-        ambient: environment.ambient_color.extend(1.0),
-        counts: UVec4::new(count, 0, 0, 0),
+    let count = u32::try_from(lights.len()).unwrap_or(u32::MAX);
+    let direct = package.v_direct.first();
+    let sun_enabled = direct.is_some_and(|light| light.flags.contains(MoonlyLightFlags::SHADOW))
+        && shadows.sun_batches.len() >= 3;
+    let sun = direct.map_or_else(MoonlySunUniform::default, |light| {
+        MoonlySunUniform::new(
+            light,
+            bindings.camera,
+            &bindings.cascades.cascades,
+            shadows,
+            bindings.cascades.depth_bias,
+        )
     });
-    view.params.write_buffer(device, queue);
+    view.lights.set(lights);
+    view.lights.write_buffer(bindings.device, bindings.queue);
+    view.params = UniformBuffer::from(MoonlyForwardParams {
+        ambient: bindings.environment.ambient_color.extend(1.0),
+        counts: UVec4::new(count, u32::from(sun_enabled), 0, 0),
+    });
+    view.params.write_buffer(bindings.device, bindings.queue);
+    view.sun = UniformBuffer::from(sun);
+    view.sun.write_buffer(bindings.device, bindings.queue);
+    let sun_depth = |index: usize| {
+        shadows
+            .sun_batches
+            .get(index)
+            .map(|batch| &batch.depth.texture.default_view)
+            .or(depth)
+    };
     view.bind_group = depth.map(|depth| {
-        device.create_bind_group(
+        bindings.device.create_bind_group(
             Some("moonly_forward_bind_group"),
-            &cache.get_bind_group_layout(&layout.layout),
+            &bindings
+                .cache
+                .get_bind_group_layout(&bindings.layout.layout),
             &BindGroupEntries::sequential((
                 &view.lights,
                 &view.params,
                 depth,
-                &layout.shadow_sampler,
+                &bindings.layout.shadow_sampler,
+                sun_depth(0).unwrap_or(depth),
+                sun_depth(1).unwrap_or(depth),
+                sun_depth(2).unwrap_or(depth),
+                &bindings.layout.shadow_sampler,
+                &view.sun,
             )),
         )
     });

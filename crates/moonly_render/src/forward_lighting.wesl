@@ -20,6 +20,23 @@ struct MoonlyForwardParams {
 @group(4) @binding(1) var<uniform> forward_params: MoonlyForwardParams;
 @group(4) @binding(2) var forward_shadow_atlas: texture_depth_2d;
 @group(4) @binding(3) var forward_shadow_sampler: sampler_comparison;
+@group(4) @binding(4) var forward_sun_near: texture_depth_2d;
+@group(4) @binding(5) var forward_sun_middle: texture_depth_2d;
+@group(4) @binding(6) var forward_sun_far: texture_depth_2d;
+@group(4) @binding(7) var forward_sun_sampler: sampler_comparison;
+@group(4) @binding(8) var<uniform> forward_sun: MoonlySunUniform;
+
+struct MoonlySunUniform {
+    view_position: vec4<f32>,
+    view_forward: vec4<f32>,
+    direction_bias: vec4<f32>,
+    color: vec4<f32>,
+    splits_near: vec4<f32>,
+    splits_far: vec4<f32>,
+    shadow_near_from_world: mat4x4<f32>,
+    shadow_middle_from_world: mat4x4<f32>,
+    shadow_far_from_world: mat4x4<f32>,
+};
 
 fn forward_attenuation(light: MoonlyForwardLight, distance_to_light: f32) -> f32 {
     if light.shadow_settings.w > 1.5 {
@@ -56,7 +73,72 @@ fn forward_cone(light: MoonlyForwardLight, light_direction: vec3<f32>) -> f32 {
     return select(reference_cone, native_cone, light.misc.x >= 0.0);
 }
 
+fn forward_cascade_shadow(
+    atlas: texture_depth_2d,
+    from_world: mat4x4<f32>,
+    world_position: vec3<f32>,
+) -> f32 {
+    let clip = from_world * vec4(world_position, 1.0);
+    if clip.w <= 0.0 {
+        return 0.0;
+    }
+    let ndc = clip.xyz / clip.w;
+    let uv = ndc.xy * vec2(0.5, -0.5) + vec2(0.5);
+    if any(uv < vec2(0.0)) || any(uv > vec2(1.0)) {
+        return 1.0;
+    }
+    var visibility = 0.0;
+    for (var tap = 0u; tap < 4u; tap += 1u) {
+        let offset = vec2(
+            select(-0.5, 0.5, (tap & 1u) != 0u),
+            select(-0.5, 0.5, (tap & 2u) != 0u),
+        );
+        visibility += textureSampleCompareLevel(
+            atlas,
+            forward_sun_sampler,
+            clamp(uv + offset * forward_sun.view_position.w, vec2(0.0), vec2(1.0)),
+            ndc.z + forward_sun.direction_bias.w,
+        );
+    }
+    return visibility * 0.25;
+}
+
+fn forward_sun_shadow(world_position: vec3<f32>) -> f32 {
+    if forward_params.counts.y == 0u {
+        return 1.0;
+    }
+    let view_depth = dot(
+        world_position - forward_sun.view_position.xyz,
+        forward_sun.view_forward.xyz,
+    );
+    if view_depth >= forward_sun.splits_far.z {
+        return 1.0;
+    }
+    if view_depth < forward_sun.splits_far.x {
+        return forward_cascade_shadow(
+            forward_sun_near,
+            forward_sun.shadow_near_from_world,
+            world_position,
+        );
+    }
+    if view_depth < forward_sun.splits_far.y {
+        return forward_cascade_shadow(
+            forward_sun_middle,
+            forward_sun.shadow_middle_from_world,
+            world_position,
+        );
+    }
+    return forward_cascade_shadow(
+        forward_sun_far,
+        forward_sun.shadow_far_from_world,
+        world_position,
+    );
+}
+
 fn forward_shadow(light: MoonlyForwardLight, world_position: vec3<f32>) -> f32 {
+    if light.shadow_settings.w > 1.5 {
+        return forward_sun_shadow(world_position);
+    }
     if light.shadow_settings.x < 0.5 {
         return 1.0;
     }

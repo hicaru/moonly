@@ -11,6 +11,7 @@ pub mod diagnostics;
 mod extraction;
 mod fog_camera;
 mod forward;
+pub mod forward_layout;
 pub mod forward_lighting;
 mod forward_prepare;
 mod froxel_pass;
@@ -73,9 +74,8 @@ pub use camera::{
 };
 pub use caster_visibility::MoonlyCasterVisibility;
 pub use diagnostics::{GpuTiming, MoonlyGpuDiagnostics, MoonlyPass};
-pub use forward_lighting::{
-    MoonlyForwardView, SetMoonlyForwardBindGroup, moonly_forward_layout, moonly_forward_layout_for,
-};
+pub use forward_layout::{moonly_forward_layout, moonly_forward_layout_for};
+pub use forward_lighting::{MoonlyForwardView, SetMoonlyForwardBindGroup};
 pub use graph::{MoonlyRender, MoonlyRenderSystems};
 pub use material_adapters::MoonlyMaterialAdapters;
 pub use material_lut::{MoonlyMaterialLut, generate_moonly_material_lut};
@@ -117,6 +117,7 @@ impl Plugin for MoonlyRenderPlugin {
             .add_systems(
                 Update,
                 (
+                    camera::sync_moonly_camera_roles,
                     mesh_bounds::collect_mesh_bounds,
                     surface::sync_moonly_surfaces,
                     fog_camera::sync_fog_cameras,
