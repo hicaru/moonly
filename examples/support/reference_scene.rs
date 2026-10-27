@@ -194,6 +194,12 @@ fn spawn_reference_light(commands: &mut Commands, images: &mut Assets<Image>) {
     if std::env::args().any(|arg| arg == "--no-shadow") {
         light.flags = MoonlyLightFlags::default();
     }
+    if std::env::args().any(|arg| arg == "--no-volumetric") {
+        light.volumetric.intensity = 0.0;
+    }
+    if std::env::args().any(|arg| arg == "--no-gi") {
+        light.flags = MoonlyLightFlags(light.flags.0 & !MoonlyLightFlags::GI_ENABLED.0);
+    }
     if std::env::args().any(|arg| arg == "--point") {
         light.light_type = MoonlyLightType::Point;
         light.flags = MoonlyLightFlags::default();

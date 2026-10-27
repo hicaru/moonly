@@ -15,6 +15,10 @@ use super::{
 };
 
 pub(crate) fn spawn_native_spot(commands: &mut Commands) {
+    commands.insert_resource(moonly_post::Hdr10PostConfig {
+        exposure_mode: moonly_post::MoonlyExposureMode::Camera,
+        ..moonly_post::Hdr10PostConfig::default()
+    });
     commands.spawn((
         SpotLight {
             color: Color::linear_rgb(1.0, 0.75, 0.46875),
@@ -22,7 +26,7 @@ pub(crate) fn spawn_native_spot(commands: &mut Commands) {
             range: 18.0,
             inner_angle: 0.9,
             outer_angle: 1.4,
-            shadow_maps_enabled: true,
+            shadow_maps_enabled: !std::env::args().any(|arg| arg == "--no-shadow"),
             ..SpotLight::default()
         },
         Transform::from_xyz(-2.0, 5.0, 3.0).looking_at(Vec3::new(0.0, 0.8, 0.0), Vec3::Y),

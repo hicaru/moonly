@@ -91,10 +91,18 @@ fn main() -> AppExit {
 fn report_exposure_probe(
     cameras: Query<&Exposure, With<MoonlyCamera>>,
     package: Res<LightPackage>,
+    virtual_lights: Res<moonly_core::VirtualGiLightPackage>,
+    adaptation: Res<moonly_post::LuminanceAdaptationState>,
     mut frame: Local<u32>,
 ) {
     *frame += 1;
     if *frame == 45 && std::env::args().any(|arg| arg == "--exposure-probe") {
+        info!(
+            "Measured luminance {:.6}, adapted {:.6}, exposure {:.6}",
+            adaptation.target_luminance,
+            adaptation.adapted_luminance,
+            adaptation.compute_exposure_scale()
+        );
         for exposure in &cameras {
             info!("Camera EV100 {:.6}", exposure.ev100);
         }
@@ -104,6 +112,21 @@ fn report_exposure_probe(
             package.v_spot.len(),
             package.v_shadowed.len(),
             package.v_direct.len()
+        );
+        let energy: f32 = virtual_lights
+            .lights
+            .iter()
+            .map(|light| light.color.x)
+            .sum();
+        let max_range = virtual_lights
+            .lights
+            .iter()
+            .fold(0.0_f32, |range, light| range.max(light.range));
+        info!(
+            "Virtual GI: {} lights, red energy {:.6}, max range {:.6}",
+            virtual_lights.lights.len(),
+            energy,
+            max_range
         );
     }
 }

@@ -28,7 +28,7 @@
         "name": "native_spot",
         "reference": "reference/native-light.png",
         "mae_tolerance": 1.0,
-        "pixel_probe": { "x": 650, "y": 300, "rgb": [202, 106, 43], "tolerance": 2 }
+        "pixel_probe": { "x": 650, "y": 300, "rgb": [165, 69, 14], "tolerance": 2 }
       },
       {
         "name": "glow",
