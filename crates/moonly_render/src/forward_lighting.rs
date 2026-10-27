@@ -1,7 +1,7 @@
 use bevy::{
     app::SubApp,
     core_pipeline::core_3d::Transparent3d,
-    ecs::query::ROQueryItem,
+    ecs::{query::ROQueryItem, system::SystemParam},
     pbr::{
         DrawMesh, SetMaterialBindGroup, SetMeshBindGroup, SetMeshViewBindGroup,
         SetMeshViewBindingArrayBindGroup, Transmissive3d,
@@ -68,7 +68,7 @@ impl Default for MoonlyForwardView {
 
 impl MoonlyForwardView {
     #[must_use]
-    pub fn bind_group(&self) -> Option<&BindGroup> {
+    pub const fn bind_group(&self) -> Option<&BindGroup> {
         self.bind_group.as_ref()
     }
 }
@@ -128,13 +128,18 @@ type ForwardViewQuery<'w, 's> = Query<
     With<crate::MoonlyCamera>,
 >;
 
+#[derive(SystemParam)]
+pub struct ForwardPrepareInputs<'w> {
+    device: Res<'w, RenderDevice>,
+    queue: Res<'w, RenderQueue>,
+    layout: Res<'w, MoonlyForwardLayout>,
+    environment: Res<'w, WeatherEnvironment>,
+    cache: Res<'w, bevy::render::render_resource::PipelineCache>,
+}
+
 pub(crate) fn prepare_forward_bind_groups(
     mut commands: Commands,
-    device: Res<RenderDevice>,
-    queue: Res<RenderQueue>,
-    layout: Res<MoonlyForwardLayout>,
-    environment: Res<WeatherEnvironment>,
-    cache: Res<bevy::render::render_resource::PipelineCache>,
+    inputs: ForwardPrepareInputs,
     mut views: ForwardViewQuery,
 ) {
     for (entity, package, shadows, current) in &mut views {
@@ -142,11 +147,11 @@ pub(crate) fn prepare_forward_bind_groups(
         if let Some(mut current) = current {
             fill_forward_view(
                 &mut current,
-                &device,
-                &queue,
-                &layout,
-                &cache,
-                &environment,
+                &inputs.device,
+                &inputs.queue,
+                &inputs.layout,
+                &inputs.cache,
+                &inputs.environment,
                 &package.0,
                 shadows,
                 depth,
@@ -156,11 +161,11 @@ pub(crate) fn prepare_forward_bind_groups(
         let mut current = MoonlyForwardView::default();
         fill_forward_view(
             &mut current,
-            &device,
-            &queue,
-            &layout,
-            &cache,
-            &environment,
+            &inputs.device,
+            &inputs.queue,
+            &inputs.layout,
+            &inputs.cache,
+            &inputs.environment,
             &package.0,
             shadows,
             depth,
