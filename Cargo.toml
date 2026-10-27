@@ -18,7 +18,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-bevy = { path = "../bevy", default-features = false, features = [
+bevy = { git = "https://github.com/hicaru/bevy", branch = "lights", default-features = false, features = [
     "3d",
     "ui",
 ] }
