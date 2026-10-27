@@ -18,7 +18,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-bevy = { version = "0.20.0", default-features = false, features = [
+bevy = { path = "../bevy", default-features = false, features = [
     "3d",
     "ui",
 ] }

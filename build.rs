@@ -16,6 +16,11 @@ const WESL_PACKAGES: &[(&str, &str, &str)] = &[
         "package::froxel",
     ),
     (
+        "crates/moonly_render/src/luminance.wesl",
+        "crates/moonly_render/src",
+        "package::luminance",
+    ),
+    (
         "crates/moonly_core/src/core_common.wesl",
         "crates/moonly_core/src",
         "package::core_common",
@@ -111,6 +116,12 @@ fn specular_multiscatter(
     F_ab: vec2<f32>,
     specular_intensity: f32,
 ) -> vec3<f32> { return vec3<f32>(); }
+";
+const BEVY_FULLSCREEN_IO: &str = r"
+struct FullscreenVertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
 ";
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -220,6 +231,11 @@ fn compile_deferred_lighting() -> Result<(), Box<dyn Error>> {
             "crates/moonly_render/src/accum_spot.wesl",
         ),
         (
+            "package::accum_native",
+            include_str!("crates/moonly_render/src/accum_native.wesl"),
+            "crates/moonly_render/src/accum_native.wesl",
+        ),
+        (
             "package::accum_direct",
             include_str!("crates/moonly_render/src/accum_direct.wesl"),
             "crates/moonly_render/src/accum_direct.wesl",
@@ -233,9 +249,14 @@ fn compile_deferred_lighting() -> Result<(), Box<dyn Error>> {
         "bevy_pbr::render::pbr_lighting",
         BEVY_PBR_LIGHTING,
     )?;
-    wesl::Wesl::new_barebones()
-        .set_custom_resolver(resolver)
-        .compile(&"package::accum_spot".parse()?)?;
+    add_module(
+        &mut resolver,
+        "bevy_core_pipeline::fullscreen_vertex_shader",
+        BEVY_FULLSCREEN_IO,
+    )?;
+    let compiler = wesl::Wesl::new("crates/moonly_render/src").set_custom_resolver(resolver);
+    compiler.compile(&"package::accum_spot".parse()?)?;
+    compiler.compile(&"package::accum_native".parse()?)?;
     Ok(())
 }
 

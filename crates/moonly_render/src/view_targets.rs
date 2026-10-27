@@ -23,7 +23,7 @@ pub(crate) struct MoonlyViewTargets {
     pub normal: ColorAttachment,
     pub albedo_gloss: ColorAttachment,
     pub accumulator: ColorAttachment,
-    pub scene: ColorAttachment,
+    pub emissive: ColorAttachment,
     pub volumetrics: ColorAttachment,
     pub local_volumetrics: ColorAttachment,
     pub froxel: ColorAttachment,
@@ -61,7 +61,7 @@ fn create_targets(
     let normal = color_target(device, cache, size, "moonly_normal");
     let albedo_gloss = color_target(device, cache, size, "moonly_albedo_gloss");
     let accumulator = color_target(device, cache, size, "moonly_accumulator");
-    let scene = color_target(device, cache, size, "moonly_scene");
+    let emissive = color_target(device, cache, size, "moonly_emissive");
     let volumetrics = color_target(device, cache, size, "moonly_volumetrics");
     let local_volumetrics = color_target(
         device,
@@ -102,7 +102,7 @@ fn create_targets(
         normal,
         albedo_gloss,
         accumulator,
-        scene,
+        emissive,
         volumetrics,
         local_volumetrics,
         froxel,

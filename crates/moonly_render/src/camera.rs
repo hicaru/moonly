@@ -1,15 +1,20 @@
 use bevy::{
     camera::{Exposure, Hdr},
     core_pipeline::{
-        prepass::DeferredPrepass, schedule::Core3d,
+        prepass::DeferredPrepass,
+        schedule::Core3d,
         tonemapping::{DebandDither, Tonemapping},
     },
     ecs::{lifecycle::HookContext, query::QueryItem, world::DeferredWorld},
+    light::EarlyLightCulling,
     pbr::ScreenSpaceTransmission,
     prelude::*,
     render::{
-        RenderApp, camera::CameraRenderGraph, extract_component::ExtractComponent,
-        sync_component::SyncComponent, view::NoIndirectDrawing,
+        RenderApp,
+        camera::CameraRenderGraph,
+        extract_component::ExtractComponent,
+        sync_component::SyncComponent,
+        view::{IsolatedMainTexture, NoIndirectDrawing},
     },
 };
 
@@ -32,13 +37,7 @@ pub enum MoonlyCameraRole {
 #[require(
     Camera3d,
     Exposure,
-    Hdr,
     CameraRenderGraph = CameraRenderGraph::new(MoonlyRender),
-    Msaa = Msaa::Off,
-    NoIndirectDrawing,
-    ScreenSpaceTransmission,
-    DeferredPrepass,
-    Tonemapping = Tonemapping::None,
     MoonlyDebugView
 )]
 pub struct MoonlyCamera {
@@ -47,20 +46,49 @@ pub struct MoonlyCamera {
 }
 
 fn on_insert_moonly_camera(mut world: DeferredWorld, context: HookContext) {
-    world
-        .commands()
-        .entity(context.entity)
-        .insert((
-            CameraRenderGraph::new(MoonlyRender),
-            Msaa::Off,
-            Tonemapping::None,
-            DebandDither::Disabled,
-        ));
+    let forward = world
+        .get_resource::<moonly_core::MoonlyNativeForward>()
+        .is_some_and(|settings| settings.0);
+    let native = world
+        .get_resource::<moonly_core::MoonlyNativePost>()
+        .is_some_and(|settings| settings.0);
+    let deferred = world.get::<DeferredPrepass>(context.entity).is_some();
+    let isolated = world
+        .get::<MoonlyCamera>(context.entity)
+        .is_some_and(|camera| camera.role == MoonlyCameraRole::Overlay);
+    let mut commands = world.commands();
+    let mut entity = commands.entity(context.entity);
+    if forward {
+        entity.insert((CameraRenderGraph::new(Core3d), EarlyLightCulling));
+        entity.remove::<IsolatedMainTexture>();
+        if !deferred {
+            entity.remove::<DeferredPrepass>();
+        }
+        return;
+    }
+    entity.insert((
+        CameraRenderGraph::new(MoonlyRender),
+        Msaa::Off,
+        NoIndirectDrawing,
+        ScreenSpaceTransmission::default(),
+        Tonemapping::default(),
+        Hdr,
+        DeferredPrepass,
+    ));
+    entity.remove::<EarlyLightCulling>();
+    if isolated {
+        entity.insert(IsolatedMainTexture);
+    }
+    if !native {
+        entity.insert((Tonemapping::None, DebandDither::Disabled));
+    }
 }
 
 fn on_remove_moonly_camera(mut world: DeferredWorld, context: HookContext) {
     if let Ok(mut entity) = world.commands().get_entity(context.entity) {
-        entity.try_insert(CameraRenderGraph::new(Core3d));
+        entity
+            .try_insert(CameraRenderGraph::new(Core3d))
+            .remove::<EarlyLightCulling>();
     }
 }
 

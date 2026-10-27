@@ -11,6 +11,8 @@ use moonly_post::{Hdr10PostConfig, TonemapOperator};
 pub struct MoonlyPostSettings {
     /// Tonemapping operator.
     pub operator: TonemapOperator,
+    /// Exposure source for this camera.
+    pub exposure_mode: moonly_post::MoonlyExposureMode,
     /// Contrast offset around the middle-gray pivot.
     pub contrast: f32,
     /// Saturation multiplier after tonemapping.
@@ -52,6 +54,7 @@ impl MoonlyPostSettings {
     pub fn from_config(config: &Hdr10PostConfig) -> Self {
         Self {
             operator: config.operator,
+            exposure_mode: config.exposure_mode,
             contrast: config.contrast,
             saturation: 1.0 + config.vibrance,
             grading_exposure: 0.0,
@@ -66,6 +69,20 @@ impl MoonlyPostSettings {
             vignette_smoothness: 0.1,
             chromatic_aberration: 0.0,
             max_nits: config.max_nits,
+        }
+    }
+
+    pub(crate) fn exposure(
+        &self,
+        camera_exposure: f32,
+        config: &Hdr10PostConfig,
+        adaptation: &moonly_post::LuminanceAdaptationState,
+    ) -> f32 {
+        match self.exposure_mode {
+            moonly_post::MoonlyExposureMode::Camera => camera_exposure,
+            moonly_post::MoonlyExposureMode::LuminanceAdaptation => {
+                config.exposure * adaptation.compute_exposure_scale()
+            }
         }
     }
 }
@@ -101,10 +118,48 @@ impl ExtractComponent<RenderApp> for MoonlyExposure {
     }
 }
 
-pub(crate) fn neutralize_view_exposure(
-    mut cameras: Query<&mut bevy::render::camera::ExtractedCamera, With<crate::MoonlyCamera>>,
+pub(crate) fn configure_view_exposure(
+    config: Option<Res<Hdr10PostConfig>>,
+    mut cameras: Query<
+        (
+            &mut bevy::render::camera::ExtractedCamera,
+            Option<&MoonlyPostSettings>,
+        ),
+        With<crate::MoonlyCamera>,
+    >,
 ) {
-    for mut camera in &mut cameras {
-        camera.exposure = 1.0;
+    let Some(config) = config else {
+        return;
+    };
+    let legacy_exposure = bevy::camera::Exposure::default().exposure();
+    for (mut camera, settings) in &mut cameras {
+        let mode = settings.map_or(config.exposure_mode, |settings| settings.exposure_mode);
+        if mode == moonly_post::MoonlyExposureMode::LuminanceAdaptation {
+            camera.exposure = legacy_exposure;
+        }
+    }
+}
+
+pub(crate) fn native_forward_disabled(
+    native: Option<Res<moonly_core::MoonlyNativeForward>>,
+) -> bool {
+    !native.is_some_and(|settings| settings.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exposure_source_selects_adaptation_or_camera_without_cross_scaling() {
+        let config = Hdr10PostConfig::default();
+        let adaptation = moonly_post::LuminanceAdaptationState::default();
+        let mut settings = MoonlyPostSettings::from_config(&config);
+        let automatic = settings.exposure(0.37, &config, &adaptation);
+        assert!((automatic - config.exposure).abs() < f32::EPSILON);
+
+        settings.exposure_mode = moonly_post::MoonlyExposureMode::Camera;
+        let manual = settings.exposure(0.37, &config, &adaptation);
+        assert!((manual - 0.37).abs() < f32::EPSILON);
     }
 }

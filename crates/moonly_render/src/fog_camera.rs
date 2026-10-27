@@ -48,4 +48,33 @@ mod tests {
                 && matches!(fog.falloff, FogFalloff::Exponential { density } if (density - 0.025).abs() < 1.0e-6)
         }));
     }
+
+    #[test]
+    fn native_forward_preserves_explicit_fog() {
+        let mut app = App::new();
+        app.insert_resource(moonly_core::MoonlyNativeForward(true));
+        app.add_plugins((MinimalPlugins, crate::MoonlyRenderPlugin));
+        let color = Color::srgb(0.1, 0.2, 0.3);
+        let entity = app
+            .world_mut()
+            .spawn((
+                MoonlyCamera::default(),
+                DistanceFog {
+                    color,
+                    falloff: FogFalloff::Linear {
+                        start: 1.0,
+                        end: 2.0,
+                    },
+                    ..DistanceFog::default()
+                },
+            ))
+            .id();
+        app.update();
+        let fog = app.world().get::<DistanceFog>(entity).cloned();
+        assert!(fog.is_some_and(|fog| {
+            fog.color == color
+                && matches!(fog.falloff, FogFalloff::Linear { start, end }
+                    if (start - 1.0).abs() < f32::EPSILON && (end - 2.0).abs() < f32::EPSILON)
+        }));
+    }
 }

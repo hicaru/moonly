@@ -1,5 +1,6 @@
 use bevy::{
     asset::{AssetServer, load_embedded_asset},
+    core_pipeline::FullscreenShader,
     mesh::VertexBufferLayout,
     prelude::*,
     render::{
@@ -10,7 +11,7 @@ use bevy::{
             RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
             StencilFaceState, StencilOperation, StencilState, TextureSampleType, VertexAttribute,
             VertexFormat, VertexState, VertexStepMode,
-            binding_types::{sampler, texture_2d, texture_2d_array, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_2d_array, texture_3d, uniform_buffer},
         },
         renderer::RenderDevice,
     },
@@ -33,6 +34,7 @@ pub(crate) struct MoonlySpotPipeline {
 
 pub(crate) fn init_spot_pipeline(
     mut commands: Commands,
+    fullscreen: Res<FullscreenShader>,
     asset_server: Res<AssetServer>,
     pipeline_cache: Res<PipelineCache>,
     device: Res<RenderDevice>,
@@ -73,6 +75,12 @@ pub(crate) fn init_spot_pipeline(
         volumetric,
         shadow_sampler,
     });
+    crate::occlusion::native::init_native_local_pipeline(
+        commands,
+        fullscreen,
+        asset_server,
+        pipeline_cache,
+    );
 }
 
 fn spot_bind_group_layout() -> BindGroupLayoutDescriptor {
@@ -85,6 +93,8 @@ fn spot_bind_group_layout() -> BindGroupLayoutDescriptor {
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 uniform_buffer::<MoonlySpotUniform>(false),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                sampler(SamplerBindingType::Filtering),
                 texture_2d(TextureSampleType::Depth),
                 sampler(SamplerBindingType::Comparison),
                 texture_2d(TextureSampleType::Float { filterable: true }),
@@ -239,7 +249,7 @@ const fn stencil_face(depth_fail_op: StencilOperation) -> StencilFaceState {
     }
 }
 
-const fn additive_component() -> BlendComponent {
+pub(crate) const fn additive_component() -> BlendComponent {
     BlendComponent {
         src_factor: BlendFactor::One,
         dst_factor: BlendFactor::One,

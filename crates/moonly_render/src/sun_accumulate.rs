@@ -12,7 +12,7 @@ use bevy::{
             PipelineCache, RenderPassDescriptor, RenderPipelineDescriptor, Sampler,
             SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, TextureSampleType,
             UniformBuffer,
-            binding_types::{sampler, texture_2d, texture_2d_array, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_2d_array, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::ExtractedView,
@@ -58,7 +58,13 @@ impl MoonlySunUniform {
             view_position: view.world_from_view.translation().extend(shadow_texel),
             view_forward: view.world_from_view.forward().as_vec3().extend(0.0),
             direction_bias: light.direction.extend(depth_bias),
-            color: light.color.extend(1.0),
+            color: light.color.extend(
+                if light.flags.contains(moonly_core::MoonlyLightFlags::NATIVE) {
+                    1.0
+                } else {
+                    0.0
+                },
+            ),
             splits_near: Vec4::new(
                 cascades.first().map_or(0.0, |cascade| cascade.split_near),
                 split(0),
@@ -150,6 +156,8 @@ fn sun_bind_group_layout() -> BindGroupLayoutDescriptor {
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 uniform_buffer::<MoonlySunUniform>(false),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                sampler(SamplerBindingType::Filtering),
                 texture_2d(TextureSampleType::Depth),
                 texture_2d(TextureSampleType::Depth),
                 texture_2d(TextureSampleType::Depth),
@@ -178,6 +186,7 @@ pub(crate) struct SunPrepareInputs<'w> {
     pipeline: Res<'w, MoonlySunPipeline>,
     cascades: Res<'w, moonly_core::MoonlySunPackage>,
     fallback: Res<'w, MoonlyFallbackProjector>,
+    lut: Res<'w, crate::material_lut::MoonlyMaterialLutTexture>,
     jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
 }
 
@@ -241,6 +250,8 @@ fn create_sun_bind_group(
                 &targets.normal.texture.default_view,
                 &targets.albedo_gloss.texture.default_view,
                 &uniform,
+                &inputs.lut.view,
+                &inputs.lut.sampler,
                 &near.depth.texture.default_view,
                 &middle.depth.texture.default_view,
                 &far.depth.texture.default_view,

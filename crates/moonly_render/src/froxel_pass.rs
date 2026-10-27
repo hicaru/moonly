@@ -224,11 +224,18 @@ fn create_froxel_bind_group(
     ))
 }
 
+type FroxelView<'w, 's> = ViewQuery<
+    'w,
+    's,
+    (
+        &'static MoonlyViewTargets,
+        Option<&'static ViewFroxelBindGroup>,
+    ),
+    (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+>;
+
 pub(crate) fn render_froxel(
-    view: ViewQuery<
-        (&MoonlyViewTargets, Option<&ViewFroxelBindGroup>),
-        (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
-    >,
+    view: FroxelView,
     cache: Res<PipelineCache>,
     pipeline: Res<MoonlyFroxelPipeline>,
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,

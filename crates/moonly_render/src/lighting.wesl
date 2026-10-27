@@ -8,6 +8,9 @@ import bevy_pbr::render::pbr_lighting::{
 
 const MOONLY_INVERSE_PI: f32 = 0.3183098861837907;
 
+@group(0) @binding(4) var material_lut: texture_3d<f32>;
+@group(0) @binding(5) var material_sampler: sampler;
+
 fn moonly_f_ab(perceptual_roughness: f32, NdotV: f32) -> vec2<f32> {
     let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
     let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
@@ -51,4 +54,23 @@ fn moonly_brdf(
         * F_Schlick(1.0, f90, NdotV)
         * MOONLY_INVERSE_PI;
     return (diffuse + specular) * NdotL;
+}
+
+fn moonly_legacy_brdf(
+    normal: vec3<f32>,
+    view_direction: vec3<f32>,
+    light_direction: vec3<f32>,
+    albedo_gloss: vec4<f32>,
+    material_index: f32,
+) -> vec3<f32> {
+    let half_direction = normalize(light_direction + view_direction);
+    let ld = max(dot(normal, light_direction), 0.0);
+    let ls = max(dot(normal, half_direction), 0.0);
+    let response = textureSampleLevel(
+        material_lut,
+        material_sampler,
+        vec3(ld, ls, material_index),
+        0.0,
+    ).rg;
+    return albedo_gloss.rgb * response.x + vec3(response.y * albedo_gloss.a);
 }

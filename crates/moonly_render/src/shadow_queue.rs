@@ -11,8 +11,9 @@ use bevy::{
     },
     mesh::Mesh3d,
     pbr::{
-        MeshPipelineKey, PreparedMaterial, RenderMaterialInstances, RenderMeshInstances,
-        SetMaterialBindGroup, SetPrepassViewBindGroup, StandardMaterial, alpha_mode_pipeline_key,
+        MeshPipelineKey, PreparedMaterial, RenderMaterialInstances, RenderMeshInstanceFlags,
+        RenderMeshInstances, SetMaterialBindGroup, SetPrepassViewBindGroup, StandardMaterial,
+        alpha_mode_pipeline_key,
     },
     prelude::*,
     render::{
@@ -136,7 +137,11 @@ fn queue_shadow_entity(
     let Some(mesh_instance) = resources.instances.render_mesh_queue_data(main_entity) else {
         return;
     };
-    if mesh_instance.lightmap_slab_index().is_some() {
+    if mesh_instance.lightmap_slab_index().is_some()
+        || !mesh_instance
+            .flags()
+            .contains(RenderMeshInstanceFlags::SHADOW_CASTER)
+    {
         return;
     }
     let Some(material) = resources.materials.get(material_instance.asset_id) else {

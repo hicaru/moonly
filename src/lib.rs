@@ -12,7 +12,7 @@ pub use moonly_shadows as shadows;
 pub use moonly_volumetrics as volumetrics;
 
 use bevy::prelude::*;
-use moonly_core::{MoonlyConfig, MoonlyCorePlugin};
+use moonly_core::{MoonlyConfig, MoonlyCorePlugin, MoonlyNativeForward};
 use moonly_cull::MoonlyCullPlugin;
 use moonly_gi::MoonlyGiPlugin;
 use moonly_render::MoonlyRenderPlugin;
@@ -37,14 +37,22 @@ impl MoonlyPlugin {
 
 impl Plugin for MoonlyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MoonlyCorePlugin,
-            MoonlyRenderPlugin,
-            MoonlyCullPlugin,
-            MoonlyShadowsPlugin,
-            MoonlyGiPlugin,
-        ))
-        .insert_resource(self.config.clone());
+        let native_forward = app
+            .world()
+            .get_resource::<MoonlyNativeForward>()
+            .is_some_and(|settings| settings.0);
+        if native_forward {
+            app.add_plugins(MoonlyRenderPlugin);
+        } else {
+            app.add_plugins((
+                MoonlyCorePlugin,
+                MoonlyRenderPlugin,
+                MoonlyCullPlugin,
+                MoonlyShadowsPlugin,
+                MoonlyGiPlugin,
+            ));
+        }
+        app.insert_resource(self.config.clone());
     }
 }
 
@@ -97,6 +105,22 @@ mod tests {
                 .first()
                 .is_some_and(|batch| batch.allocator.allocated.len() == 1)
         );
+    }
+
+    #[test]
+    fn native_forward_avoids_unused_subsystems() {
+        let mut app = App::new();
+        app.insert_resource(MoonlyNativeForward(true));
+        app.insert_resource(MoonlyNativePost(true));
+        app.add_plugins((MinimalPlugins, MoonlyPlugin::enhanced()));
+        app.world_mut().spawn(MoonlyCamera::default());
+        app.update();
+        assert!(app.world().contains_resource::<MoonlyGpuDiagnostics>());
+        assert!(!app.world().contains_resource::<LightPackage>());
+        assert!(!app.world().contains_resource::<WeatherEnvironment>());
+        assert!(!app.world().contains_resource::<GiLightField>());
+        assert!(!app.world().contains_resource::<OccRasterizer>());
+        assert!(!app.world().contains_resource::<LocalShadowBatches>());
     }
 
     #[test]

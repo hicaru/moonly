@@ -17,7 +17,7 @@ use bevy::{
         uniform::{ComponentUniforms, DynamicUniformIndex},
     },
 };
-use moonly_core::{HemisphereTracker, MoonlyConfig, WeatherEnvironment};
+use moonly_core::{HemisphereTracker, MoonlyConfig, MoonlyNativeForward, WeatherEnvironment};
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Reflect)]
 #[reflect(Component)]
@@ -90,8 +90,12 @@ pub(crate) fn sync_moonly_surfaces(
     mut commands: Commands,
     config: Option<Res<MoonlyConfig>>,
     environment: Option<Res<WeatherEnvironment>>,
+    native: Res<MoonlyNativeForward>,
     mut meshes: SurfaceQuery,
 ) {
+    if native.0 {
+        return;
+    }
     let Some(environment) = environment else {
         return;
     };
@@ -186,6 +190,7 @@ mod tests {
         Commands<'w, 's>,
         Option<Res<'w, MoonlyConfig>>,
         Option<Res<'w, WeatherEnvironment>>,
+        Res<'w, MoonlyNativeForward>,
         SurfaceQuery<'w, 's>,
     )>;
 
@@ -206,12 +211,13 @@ mod tests {
     fn despawn_before_command_application_does_not_fail() {
         let mut world = World::new();
         world.insert_resource(WeatherEnvironment::default());
+        world.init_resource::<MoonlyNativeForward>();
         let entity = world.spawn(Mesh3d::default()).id();
         let mut state = SurfaceSyncState::new(&mut world);
-        let Ok((commands, config, environment, meshes)) = state.get_mut(&mut world) else {
+        let Ok((commands, config, environment, native, meshes)) = state.get_mut(&mut world) else {
             return;
         };
-        sync_moonly_surfaces(commands, config, environment, meshes);
+        sync_moonly_surfaces(commands, config, environment, native, meshes);
         assert!(world.despawn(entity));
         state.apply(&mut world);
     }

@@ -16,6 +16,7 @@ struct MoonlyGbufferOutput {
     @location(1) normal: vec4<f32>,
     @location(2) albedo_gloss: vec4<f32>,
     @location(3) accumulator: vec4<f32>,
+    @location(4) emissive: vec4<f32>,
 };
 
 fn tracked_irradiance(normal: vec3<f32>) -> vec3<f32> {
@@ -37,10 +38,11 @@ fn moonly_gbuffer_output(world_position: vec3<f32>, pbr_input: PbrInput) -> Moon
     let albedo = pbr_input.material.base_color.rgb * mix(1.0, 0.58, wetness);
     let roughness = mix(pbr_input.material.perceptual_roughness, 0.08, wetness);
     var out: MoonlyGbufferOutput;
-    out.position = vec4(world_position, 1.0);
-    out.normal = vec4(normal, pbr_input.material.metallic);
-    out.albedo_gloss = vec4(albedo, roughness);
+    out.position = vec4(world_position, 1.0 + pbr_input.material.metallic);
+    out.normal = vec4(normal, surface.values.x);
+    out.albedo_gloss = vec4(albedo, 1.0 - roughness);
     let indirect = tracked_irradiance(normal) * albedo * surface.local.a;
     out.accumulator = vec4(pbr_input.material.emissive.rgb + indirect, 1.0 + surface.local.a);
+    out.emissive = pbr_input.material.emissive;
     return out;
 }

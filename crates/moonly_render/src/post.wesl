@@ -102,7 +102,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return textureLoad(scene_texture, pixel, 0);
     }
     let bloom_pixel = vec2<i32>(in.uv * vec2<f32>(textureDimensions(bloom_texture)));
-    let bloom = textureLoad(bloom_texture, bloom_pixel, 0).rgb * post.bloom.x;
+    let bloom_exposure = select(1.0, post.exposure.x, post.modes.w == 1u);
+    let bloom = textureLoad(bloom_texture, bloom_pixel, 0).rgb * post.bloom.x * bloom_exposure;
     let flare = lens_flare(pixel, dimensions);
     var color = (scene + flare) * post.exposure.x + bloom;
     color = (color - vec3(0.18)) * (1.0 + post.exposure.y) + vec3(0.18);

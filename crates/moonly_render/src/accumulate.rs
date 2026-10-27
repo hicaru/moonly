@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     render::{
         render_asset::RenderAssets,
-        render_resource::{BindGroup, BindGroupEntries, PipelineCache, ShaderType, UniformBuffer},
+        render_resource::{BindGroup, BindGroupEntries, PipelineCache, UniformBuffer},
         renderer::{RenderDevice, RenderQueue},
         sync_world::MainEntity,
         texture::GpuImage,
@@ -16,103 +16,13 @@ use moonly_core::{
 };
 
 use crate::{
-    camera::MoonlyCamera,
-    light_volume::clip_from_local,
-    projector::MoonlyFallbackProjector,
-    shadow_targets::{MoonlyShadowSample, MoonlySpotShadowTarget},
-    spot_pipeline::MoonlySpotPipeline,
+    camera::MoonlyCamera, projector::MoonlyFallbackProjector,
+    shadow_targets::MoonlySpotShadowTarget, spot_pipeline::MoonlySpotPipeline,
     view_targets::MoonlyViewTargets,
 };
 
-#[derive(ShaderType)]
-pub(crate) struct MoonlySpotUniform {
-    position_range: Vec4,
-    direction_cos: Vec4,
-    color: Vec4,
-    view_position: Vec4,
-    shadow_from_world: Mat4,
-    projector_from_world: Mat4,
-    clip_from_local: Mat4,
-    shadow_settings: Vec4,
-    shadow_transform: Vec4,
-    world_from_clip: Mat4,
-    volumetric: Vec4,
-    screen_size: Vec4,
-}
-
-impl MoonlySpotUniform {
-    fn new(
-        light: &MoonlyLight,
-        view: &ExtractedView,
-        shadow: Option<&MoonlyShadowSample>,
-        has_projector: bool,
-    ) -> Self {
-        let camera_position = view.world_from_view.translation();
-        let atlas_size = shadow.map_or(2048, |shadow| shadow.atlas_size);
-        let rect = shadow.map_or(
-            moonly_core::MoonlyShadowRect {
-                x: 0,
-                y: 0,
-                size: atlas_size,
-            },
-            |shadow| shadow.rect,
-        );
-        let projector =
-            moonly_core::SpotShadowXform::compute_xf_spot(light, camera_position, atlas_size, 0);
-        let clip_from_world = view.clip_from_view * view.world_from_view.to_matrix().inverse();
-        let lowres_size = Vec2::new(
-            (view.viewport.z / 8).max(1) as f32,
-            (view.viewport.w / 8).max(1) as f32,
-        );
-        Self {
-            position_range: light.position.extend(light.range),
-            direction_cos: light
-                .direction
-                .extend(if light.light_type == MoonlyLightType::Point {
-                    -1.0
-                } else {
-                    (light.cone_angle * 0.5).cos()
-                }),
-            color: light.color.extend(if light.flags.contains(MoonlyLightFlags::VIRTUAL_GI) {
-                0.0
-            } else {
-                1.0
-            }),
-            view_position: camera_position.extend(1.0),
-            shadow_from_world: shadow.map_or(Mat4::IDENTITY, |shadow| shadow.xform.combine),
-            projector_from_world: projector.combine,
-            clip_from_local: clip_from_local(light, view),
-            shadow_settings: Vec4::new(
-                if shadow.is_some_and(|shadow| shadow.enabled) {
-                    1.0
-                } else {
-                    0.0
-                },
-                0.0005,
-                1.0 / rect.size as f32,
-                if has_projector { 1.0 } else { 0.0 },
-            ),
-            shadow_transform: Vec4::new(
-                rect.x as f32 / atlas_size as f32,
-                rect.y as f32 / atlas_size as f32,
-                rect.size as f32 / atlas_size as f32,
-                0.0,
-            ),
-            world_from_clip: clip_from_world.inverse(),
-            volumetric: Vec4::new(
-                light.volumetric.intensity,
-                light.volumetric.distance,
-                light.volumetric.quality,
-                if light.inner_cone_angle >= 0.0 {
-                    (light.inner_cone_angle * 0.5).cos()
-                } else {
-                    -1.0
-                },
-            ),
-            screen_size: lowres_size.extend(0.0).extend(0.0),
-        }
-    }
-}
+pub(crate) mod spot_uniform;
+pub(crate) use self::spot_uniform::MoonlySpotUniform;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LocalVolumeKind {
@@ -132,22 +42,25 @@ pub(crate) struct MoonlySpotBindGroups(pub Vec<MoonlySpotBindGroup>);
 
 #[derive(SystemParam)]
 pub(crate) struct SpotPrepareInputs<'w> {
-    device: Res<'w, RenderDevice>,
-    queue: Res<'w, RenderQueue>,
-    pipeline_cache: Res<'w, PipelineCache>,
-    pipeline: Res<'w, MoonlySpotPipeline>,
-    virtual_lights: Res<'w, VirtualGiLightPackage>,
-    images: Res<'w, RenderAssets<GpuImage>>,
-    fallback: Res<'w, MoonlyFallbackProjector>,
-    jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
+    pub(crate) device: Res<'w, RenderDevice>,
+    pub(crate) queue: Res<'w, RenderQueue>,
+    pub(crate) pipeline_cache: Res<'w, PipelineCache>,
+    pub(crate) pipeline: Res<'w, MoonlySpotPipeline>,
+    pub(crate) native_pipeline: Res<'w, crate::occlusion::native::MoonlyNativeLocalPipeline>,
+    pub(crate) virtual_lights: Res<'w, VirtualGiLightPackage>,
+    pub(crate) images: Res<'w, RenderAssets<GpuImage>>,
+    pub(crate) fallback: Res<'w, MoonlyFallbackProjector>,
+    pub(crate) lut: Res<'w, crate::material_lut::MoonlyMaterialLutTexture>,
+    pub(crate) jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
 }
 
-struct SpotViewContext<'a, 'w> {
-    inputs: &'a SpotPrepareInputs<'w>,
-    view: &'a ExtractedView,
-    targets: &'a MoonlyViewTargets,
-    shadow: &'a MoonlySpotShadowTarget,
-    package: &'a LightPackage,
+pub(crate) struct SpotViewContext<'a, 'w> {
+    pub(crate) inputs: &'a SpotPrepareInputs<'w>,
+    pub(crate) view: &'a ExtractedView,
+    pub(crate) layers: &'a bevy::camera::visibility::RenderLayers,
+    pub(crate) targets: &'a MoonlyViewTargets,
+    pub(crate) shadow: &'a MoonlySpotShadowTarget,
+    pub(crate) package: &'a LightPackage,
 }
 
 type MoonlySpotViewQuery<'w, 's> = Query<
@@ -156,10 +69,12 @@ type MoonlySpotViewQuery<'w, 's> = Query<
     (
         Entity,
         &'static ExtractedView,
+        Option<&'static bevy::camera::visibility::RenderLayers>,
         &'static MoonlyViewTargets,
         &'static MoonlySpotShadowTarget,
         &'static crate::light_packages::MoonlyViewLightPackage,
         Option<&'static mut MoonlySpotBindGroups>,
+        Option<&'static mut crate::occlusion::native::MoonlyNativeLocalBindGroup>,
     ),
     With<MoonlyCamera>,
 >;
@@ -169,15 +84,41 @@ pub(crate) fn prepare_spot_bind_groups(
     inputs: SpotPrepareInputs,
     mut views: MoonlySpotViewQuery,
     projectors: Query<(&MainEntity, &MoonlyProjector)>,
+    mut scratch: Local<crate::occlusion::native::bins::NativeBuildScratch>,
 ) {
-    for (entity, view, targets, shadow, package, existing) in &mut views {
+    let default_layers = bevy::camera::visibility::RenderLayers::default();
+    for (entity, view, layers, targets, shadow, package, existing, native_existing) in &mut views {
         let context = SpotViewContext {
             inputs: &inputs,
             view,
+            layers: layers.unwrap_or(&default_layers),
             targets,
             shadow,
             package: &package.0,
         };
+        if crate::occlusion::native::can_batch(&context, &projectors) {
+            commands.entity(entity).remove::<(
+                MoonlySpotBindGroups,
+                crate::occlusion_state::MoonlyOcclusionState,
+            )>();
+            let native = crate::occlusion::native::prepare_native_local(
+                &context,
+                &projectors,
+                native_existing.map(Mut::into_inner),
+                &mut scratch,
+            );
+            if let Some(native) = native {
+                commands.entity(entity).insert(native);
+            } else {
+                commands
+                    .entity(entity)
+                    .remove::<crate::occlusion::native::MoonlyNativeLocalBindGroup>();
+            }
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<crate::occlusion::native::MoonlyNativeLocalBindGroup>();
         if let Some(mut existing) = existing {
             fill_spot_groups(&context, &projectors, &mut existing.0);
             continue;
@@ -201,20 +142,35 @@ fn fill_spot_groups(
             continue;
         }
         let projector = find_projector(light, context.inputs, projectors);
-        groups.extend(create_spot_bind_group(context, light, projector));
+        let key = crate::occlusion_state::MoonlyLightKey {
+            source_entity: light.source_entity,
+            omnipart_face: light.omnipart_face,
+            virtual_index: None,
+        };
+        groups.extend(create_spot_bind_group_with_key(
+            context, light, projector, key,
+        ));
     }
-    for virtual_light in &context.inputs.virtual_lights.lights {
+    for (index, virtual_light) in context.inputs.virtual_lights.lights.iter().enumerate() {
         let light = crate::reflected_lights::local_light(virtual_light);
-        if crate::visibility::light_visible(&light, context.view) {
-            groups.extend(create_spot_bind_group(context, &light, None));
+        if virtual_light.visible_in_layers(context.layers)
+            && crate::visibility::light_visible(&light, context.view)
+        {
+            groups.extend(create_spot_bind_group_with_key(
+                context,
+                &light,
+                None,
+                crate::occlusion_state::MoonlyLightKey::virtual_light(index),
+            ));
         }
     }
 }
 
-fn create_spot_bind_group(
+fn create_spot_bind_group_with_key(
     context: &SpotViewContext,
     light: &MoonlyLight,
     projector: Option<&GpuImage>,
+    key: crate::occlusion_state::MoonlyLightKey,
 ) -> Option<MoonlySpotBindGroup> {
     let inputs = context.inputs;
     let sample = context.shadow.sample(light);
@@ -241,6 +197,8 @@ fn create_spot_bind_group(
             &context.targets.normal.texture.default_view,
             &context.targets.albedo_gloss.texture.default_view,
             &uniform,
+            &inputs.lut.view,
+            &inputs.lut.sampler,
             depth,
             &inputs.pipeline.shadow_sampler,
             projector_view,
@@ -259,14 +217,11 @@ fn create_spot_bind_group(
         kind,
         volumetric: light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
             && light.volumetric.intensity > 0.0,
-        key: crate::occlusion_state::MoonlyLightKey {
-            source_entity: light.source_entity,
-            omnipart_face: light.omnipart_face,
-        },
+        key,
     })
 }
 
-fn find_projector<'a>(
+pub(crate) fn find_projector<'a>(
     light: &MoonlyLight,
     inputs: &'a SpotPrepareInputs<'_>,
     projectors: &Query<(&MainEntity, &MoonlyProjector)>,

@@ -90,6 +90,7 @@ pub(crate) fn render_gbuffer(
         Some(targets.normal.get_attachment()),
         Some(targets.albedo_gloss.get_attachment()),
         Some(targets.accumulator.get_attachment()),
+        Some(targets.emissive.get_attachment()),
     ];
     let diagnostics = context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();

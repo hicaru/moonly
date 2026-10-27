@@ -78,7 +78,7 @@ impl SpecializedMeshPipeline for MoonlyMeshPipeline {
 }
 
 fn gbuffer_targets() -> Vec<Option<ColorTargetState>> {
-    (0..4)
+    (0..5)
         .map(|_| {
             Some(ColorTargetState {
                 format: GBUFFER_FORMAT,

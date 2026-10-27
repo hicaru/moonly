@@ -6,9 +6,7 @@ use bevy::{
     render::{
         camera::ExtractedCamera,
         render_phase::{ViewBinnedRenderPhases, ViewSortedRenderPhases},
-        render_resource::{
-            FilterMode, SamplerDescriptor, TextureDescriptor, TextureDimension, TextureUsages,
-        },
+        render_resource::{TextureDescriptor, TextureDimension, TextureUsages},
         renderer::RenderDevice,
         texture::TextureCache,
         view::ExtractedView,
@@ -55,7 +53,11 @@ pub(crate) fn prepare_transmission_textures(
         let Some(size) = camera.physical_target_size else {
             continue;
         };
-        if !ready || !has_items || settings.steps == 0 {
+        if !ready {
+            continue;
+        }
+        if !has_items || settings.steps == 0 {
+            commands.entity(entity).remove::<ViewTransmissionTexture>();
             continue;
         }
         let cached = inputs.cache.get(
@@ -71,16 +73,9 @@ pub(crate) fn prepare_transmission_textures(
                 view_formats: &[],
             },
         );
-        let sampler = inputs.device.create_sampler(&SamplerDescriptor {
-            label: Some("moonly_transmission_sampler"),
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Linear,
-            ..default()
-        });
         commands.entity(entity).insert(ViewTransmissionTexture {
             texture: cached.texture,
             view: cached.default_view,
-            sampler,
         });
     }
 }

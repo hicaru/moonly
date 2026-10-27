@@ -1,6 +1,7 @@
 //! HDR10 tonemapping, Karis bloom, lens flare, and optic modes for Moonly.
 
 pub mod bloom_flare;
+pub mod luminance;
 pub mod material;
 pub mod optics;
 pub mod tonemap;
@@ -14,14 +15,18 @@ pub use crate::{
         evaluate_lens_flare_ghost, karis_box4_average, karis_downsample_13, karis_group5_average,
         karis_weight,
     },
+    luminance::{
+        DEFAULT_MIDDLE_GRAY, LUMINANCE_HISTORY_BLEND, LUMINANCE_HISTORY_KEEP,
+        LuminanceAdaptationState, update_luminance_adaptation,
+    },
     material::{
         CoreLightingRes, MoonlyLitMaterial, MoonlyLitUniform, PostLightingRes,
         sync_moonly_lit_materials,
     },
     optics::{OpticsMode, evaluate_heat_vision_cpu, evaluate_night_vision_cpu},
     tonemap::{
-        Hdr10PostConfig, MOONLY_CLASSIC_WHITEPOINT_SQ, TonemapOperator, encode_pq_st2084,
-        evaluate_tonemap_cpu,
+        Hdr10PostConfig, MOONLY_CLASSIC_WHITEPOINT_SQ, MoonlyExposureMode, TonemapOperator,
+        encode_pq_st2084, evaluate_tonemap_cpu,
     },
 };
 
@@ -53,11 +58,15 @@ impl Plugin for MoonlyPostPlugin {
             );
         }
         app.register_type::<TonemapOperator>()
+            .register_type::<MoonlyExposureMode>()
             .register_type::<Hdr10PostConfig>()
+            .register_type::<LuminanceAdaptationState>()
             .register_type::<OpticsMode>()
             .register_type::<MoonlyLitUniform>()
             .init_resource::<Hdr10PostConfig>()
-            .init_resource::<OpticsMode>();
+            .init_resource::<LuminanceAdaptationState>()
+            .init_resource::<OpticsMode>()
+            .add_systems(Update, update_luminance_adaptation);
     }
 }
 

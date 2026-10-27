@@ -8,12 +8,13 @@ use bevy::{
     pbr::{MeshPipeline, MeshUniform, RenderMeshInstances, SkinUniforms},
     prelude::*,
     render::{
-        batching::gpu_preprocessing::PhaseBatchedInstanceBuffers,
         mesh::{
             MeshMetadataFallbackBuffer,
             allocator::{MeshAllocator, MeshSlabId},
         },
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
+        render_phase::{
+            PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult, TrackedRenderPass,
+        },
         render_resource::{BindGroup, PipelineCache},
         renderer::RenderDevice,
     },
@@ -34,7 +35,13 @@ pub(crate) struct MoonlyShadowMeshBindGroups {
 
 #[derive(SystemParam)]
 pub(crate) struct ShadowBindGroupInputs<'w> {
-    phase_buffers: Res<'w, PhaseBatchedInstanceBuffers<MoonlyShadow3d, MeshUniform>>,
+    phase_buffers: Res<
+        'w,
+        bevy::render::batching::gpu_preprocessing::PhaseBatchedInstanceBuffers<
+            MoonlyShadow3d,
+            MeshUniform,
+        >,
+    >,
     pipeline: Res<'w, MeshPipeline>,
     device: Res<'w, RenderDevice>,
     pipeline_cache: Res<'w, PipelineCache>,
@@ -161,7 +168,11 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyShadowMeshBindG
         let Some(bind_group) = bind_group else {
             return RenderCommandResult::Skip;
         };
-        pass.set_bind_group(I, bind_group, &[]);
+        if let PhaseItemExtraIndex::DynamicOffset(offset) = item.extra_index() {
+            pass.set_bind_group(I, bind_group, &[offset]);
+        } else {
+            pass.set_bind_group(I, bind_group, &[]);
+        }
         RenderCommandResult::Success
     }
 }

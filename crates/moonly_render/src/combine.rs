@@ -64,11 +64,11 @@ impl MoonlyEnvironmentUniform {
     fn new(
         environment: &WeatherEnvironment,
         clip_from_world: Mat4,
-        config: &MoonlyConfig,
-        settings: &AmbientOcclusionSettings,
+        inputs: &CombinePrepareInputs,
         view_position: Vec3,
+        exposure: f32,
     ) -> Self {
-        let mode = match config.ao_mode {
+        let mode = match inputs.config.ao_mode {
             AmbientOcclusionMode::Off => 0.0,
             AmbientOcclusionMode::Ssao => 1.0,
             AmbientOcclusionMode::Hdao => 2.0,
@@ -76,17 +76,17 @@ impl MoonlyEnvironmentUniform {
             AmbientOcclusionMode::EnhancedSsdo => 4.0,
         };
         Self {
-            ambient: environment.ambient_color.extend(1.0),
+            ambient: environment.ambient_color.extend(exposure),
             hemi: environment.hemi_color,
             fog_color: environment.fog_color.extend(1.0),
             fog_plane: environment.fog_plane_for_view(clip_from_world),
-            ao: Vec4::new(mode, settings.ssdo_bounce_strength, 0.0, 0.0),
+            ao: Vec4::new(mode, inputs.ao_settings.ssdo_bounce_strength, 0.0, 0.0),
             view_position: view_position.extend(1.0),
             fog_params: Vec4::new(
                 environment.fog_density,
                 environment.fog_height_falloff,
                 environment.fog_height_reference,
-                0.0,
+                if inputs.native.0 { 1.0 } else { 0.0 },
             ),
         }
     }
@@ -101,6 +101,7 @@ pub(crate) struct CombinePrepareInputs<'w> {
     environment: Res<'w, WeatherEnvironment>,
     config: Res<'w, MoonlyConfig>,
     ao_settings: Res<'w, AmbientOcclusionSettings>,
+    native: Res<'w, moonly_core::MoonlyNativeAmbient>,
 }
 
 pub(crate) fn init_combine_pipeline(
@@ -120,6 +121,7 @@ pub(crate) fn init_combine_pipeline(
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Depth),
                 uniform_buffer::<MoonlyEnvironmentUniform>(false),
+                texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
@@ -186,6 +188,7 @@ type CombineViewQuery<'w, 's> = Query<
         &'static ExtractedView,
         &'static MoonlyViewTargets,
         &'static MoonlySpotShadowTarget,
+        &'static crate::settings::MoonlyExposure,
     ),
     With<MoonlyCamera>,
 >;
@@ -195,7 +198,7 @@ pub(crate) fn prepare_combine_bind_groups(
     inputs: CombinePrepareInputs,
     views: CombineViewQuery,
 ) {
-    for (entity, view, targets, shadow) in &views {
+    for (entity, view, targets, shadow, exposure) in &views {
         let Some(shadow_depth) = shadow.first_depth() else {
             continue;
         };
@@ -208,9 +211,9 @@ pub(crate) fn prepare_combine_bind_groups(
         let environment_data = MoonlyEnvironmentUniform::new(
             &inputs.environment,
             clip_from_world,
-            &inputs.config,
-            &inputs.ao_settings,
+            &inputs,
             view.world_from_view.translation(),
+            exposure.0,
         );
         let mut environment = UniformBuffer::from(environment_data);
         environment.write_buffer(&inputs.device, &inputs.queue);
@@ -231,6 +234,7 @@ pub(crate) fn prepare_combine_bind_groups(
                 &targets.volumetrics.texture.default_view,
                 &targets.local_volumetrics.texture.default_view,
                 &targets.froxel.texture.default_view,
+                &targets.emissive.texture.default_view,
             )),
         );
         commands

@@ -16,7 +16,7 @@ struct FullscreenVertexOutput {
 fn sample_source(uv: vec2<f32>) -> vec3<f32> {
     let dimensions = vec2<f32>(textureDimensions(source_texture));
     let pixel = vec2<i32>(clamp(uv, vec2(0.0), vec2(0.99999)) * dimensions);
-    let exposure = select(1.0, bloom.params.x, bloom.mode.x == 0u);
+    let exposure = select(1.0, bloom.params.x, bloom.mode.x == 0u && bloom.params.w < 0.5);
     return textureLoad(source_texture, pixel, 0).rgb * exposure;
 }
 
@@ -28,9 +28,13 @@ fn karis_weight(color: vec3<f32>) -> f32 {
 fn bright(color: vec3<f32>) -> vec3<f32> {
     let luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     let threshold = max(bloom.params.y, 0.0);
+    let weight = clamp(luma - threshold, 0.0, 8.0) / max(luma, 0.001);
+    if bloom.params.w >= 0.5 && bloom.params.z <= 0.0 {
+        return color * weight;
+    }
     let softness = max(bloom.params.z, 0.0001);
     let soft = smoothstep(threshold - softness, threshold + softness, luma);
-    return color * clamp(luma - threshold, 0.0, 8.0) * soft / max(luma, 0.001);
+    return color * weight * soft;
 }
 
 @fragment

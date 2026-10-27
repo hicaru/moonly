@@ -125,6 +125,7 @@ pub(crate) struct BloomPrepareInputs<'w> {
     cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyBloomPipeline>,
     config: Res<'w, Hdr10PostConfig>,
+    adaptation: Res<'w, moonly_post::LuminanceAdaptationState>,
 }
 
 type BloomView = (
@@ -140,8 +141,8 @@ struct BloomPassSettings {
     exposure: f32,
     threshold: f32,
     softness: f32,
+    legacy: bool,
 }
-
 pub(crate) fn prepare_bloom_bind_groups(
     mut commands: Commands,
     inputs: BloomPrepareInputs,
@@ -165,9 +166,10 @@ pub(crate) fn prepare_bloom_bind_groups(
             };
             let pass = BloomPassSettings {
                 stage,
-                exposure: camera.0,
+                exposure: settings.exposure(camera.0, &inputs.config, &inputs.adaptation),
                 threshold: settings.bloom_threshold,
                 softness: settings.bloom_softness,
+                legacy: settings.exposure_mode != moonly_post::MoonlyExposureMode::Camera,
             };
             create_bloom_bind_group(
                 &inputs,
@@ -183,15 +185,15 @@ pub(crate) fn prepare_bloom_bind_groups(
 
 fn bloom_source(targets: &MoonlyViewTargets, stage: usize) -> &ColorAttachment {
     if stage == 0 {
-        return &targets.scene;
+        return &targets.emissive;
     }
     let source_level = if stage < 3 { stage - 1 } else { 5 - stage };
-    targets.bloom.get(source_level).unwrap_or(&targets.scene)
+    targets.bloom.get(source_level).unwrap_or(&targets.emissive)
 }
 
 fn bloom_target(targets: &MoonlyViewTargets, stage: usize) -> &ColorAttachment {
     let target_level = if stage < 3 { stage } else { 4 - stage };
-    targets.bloom.get(target_level).unwrap_or(&targets.scene)
+    targets.bloom.get(target_level).unwrap_or(&targets.emissive)
 }
 
 fn create_bloom_bind_group(
@@ -210,7 +212,7 @@ fn create_bloom_bind_group(
             settings.exposure,
             settings.threshold,
             settings.softness,
-            0.0,
+            f32::from(u8::from(settings.legacy)),
         ),
     };
     let mut uniform = UniformBuffer::from(uniform);
@@ -249,9 +251,7 @@ pub(crate) fn render_bloom(
         timer,
     } = inputs;
     let (targets, groups, settings) = view.into_inner();
-    let intensity = settings.map_or(config.bloom_intensity, |settings| {
-        settings.bloom_intensity
-    });
+    let intensity = settings.map_or(config.bloom_intensity, |settings| settings.bloom_intensity);
     if intensity <= 0.0 {
         return;
     }

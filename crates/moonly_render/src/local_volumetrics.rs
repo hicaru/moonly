@@ -24,11 +24,15 @@ pub(crate) struct LocalVolumeRenderInputs<'w> {
     timer: Res<'w, crate::gpu_timer::MoonlyGpuTimer>,
 }
 
+type LocalVolumeView<'w, 's> = ViewQuery<
+    'w,
+    's,
+    (&'static MoonlyViewTargets, &'static MoonlySpotBindGroups),
+    (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+>;
+
 pub(crate) fn render_local_volumetrics(
-    view: ViewQuery<
-        (&MoonlyViewTargets, &MoonlySpotBindGroups),
-        (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
-    >,
+    view: LocalVolumeView,
     inputs: LocalVolumeRenderInputs,
     mut context: RenderContext,
 ) {

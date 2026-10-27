@@ -77,7 +77,7 @@ impl MoonlyPostUniform {
                 settings.operator.shader_index(),
                 optics.shader_index(),
                 u32::from(linear),
-                0,
+                u32::from(settings.exposure_mode != moonly_post::MoonlyExposureMode::Camera),
             ),
             display: Vec4::new(
                 settings.max_nits,
@@ -171,6 +171,7 @@ pub(crate) struct PostPrepareInputs<'w> {
     cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyPostPipeline>,
     config: Res<'w, Hdr10PostConfig>,
+    adaptation: Res<'w, moonly_post::LuminanceAdaptationState>,
     optics: Res<'w, OpticsMode>,
 }
 
@@ -196,11 +197,11 @@ pub(crate) fn prepare_post_bind_groups(
             &settings,
             *inputs.optics,
             linear.is_some(),
-            camera.0,
+            settings.exposure(camera.0, &inputs.config, &inputs.adaptation),
         );
         let mut uniform = UniformBuffer::from(uniform);
         uniform.write_buffer(&inputs.device, &inputs.queue);
-        let bloom = targets.bloom.first().unwrap_or(&targets.scene);
+        let bloom = targets.bloom.first().unwrap_or(&targets.emissive);
         let group = inputs.device.create_bind_group(
             Some("moonly_post_bind_group"),
             &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),

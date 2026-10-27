@@ -88,7 +88,8 @@ impl SpotShadowXform {
         let max_fov = std::f32::consts::PI - 1.0e-3;
         let fov = (light.cone_angle + tan_shift).clamp(min_fov, max_fov);
         let z_far = light.range.max(0.05);
-        let proj = perspective_rh_mat4(fov, 1.0, 0.01, z_far);
+        let z_near = light.shadow_near_z.clamp(0.001, z_far);
+        let proj = perspective_rh_mat4(fov, 1.0, z_near, z_far);
         let combine = proj * view;
 
         Self {
@@ -190,5 +191,18 @@ mod tests {
         let expected = look_to_rh_mat4(light.position, Vec3::NEG_Y, Vec3::Z);
         assert!(xf.view.abs_diff_eq(expected, 1.0e-6));
         assert!(xf.view.determinant().abs() > 0.0);
+    }
+
+    #[test]
+    fn shadow_near_plane_excludes_light_source_geometry() {
+        let light = MoonlyLight {
+            light_type: MoonlyLightType::Spot,
+            shadow_near_z: 0.1,
+            ..MoonlyLight::default()
+        };
+        let xf = SpotShadowXform::compute_xf_spot(&light, Vec3::ZERO, 2048, 0);
+        let clip = xf.combine * Vec3::new(0.0, 2.95, 0.0).extend(1.0);
+        assert!(clip.z < 0.0);
+        assert!(xf.proj.z_axis.w < 0.0);
     }
 }

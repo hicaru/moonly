@@ -1,15 +1,15 @@
-import package::lighting::moonly_brdf;
+import package::lighting::{moonly_brdf, moonly_legacy_brdf};
 
 @group(0) @binding(0) var position_texture: texture_2d<f32>;
 @group(0) @binding(1) var normal_texture: texture_2d<f32>;
 @group(0) @binding(2) var albedo_gloss_texture: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> spot: MoonlySpotUniform;
-@group(0) @binding(4) var shadow_atlas: texture_depth_2d;
-@group(0) @binding(5) var shadow_sampler: sampler_comparison;
-@group(0) @binding(6) var projector_texture: texture_2d<f32>;
-@group(0) @binding(7) var projector_sampler: sampler;
-@group(0) @binding(8) var jitter_texture: texture_2d_array<f32>;
-@group(0) @binding(9) var jitter_sampler: sampler;
+@group(0) @binding(6) var shadow_atlas: texture_depth_2d;
+@group(0) @binding(7) var shadow_sampler: sampler_comparison;
+@group(0) @binding(8) var projector_texture: texture_2d<f32>;
+@group(0) @binding(9) var projector_sampler: sampler;
+@group(0) @binding(10) var jitter_texture: texture_2d_array<f32>;
+@group(0) @binding(11) var jitter_sampler: sampler;
 
 struct MoonlySpotUniform {
     position_range: vec4<f32>,
@@ -90,14 +90,23 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(normal_sample.xyz);
     let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     let view_direction = normalize(spot.view_position.xyz - position.xyz);
-    let surface = moonly_brdf(
+    var surface = moonly_legacy_brdf(
         normal,
         view_direction,
         light_direction,
-        albedo_gloss.rgb,
+        albedo_gloss,
         normal_sample.w,
-        albedo_gloss.a,
     );
+    if spot.color.a >= 0.5 {
+        surface = moonly_brdf(
+            normal,
+            view_direction,
+            light_direction,
+            albedo_gloss.rgb,
+            max(position.w - 1.0, 0.0),
+            1.0 - albedo_gloss.a,
+        );
+    }
     let projection = projector_color(position.xyz);
     let radiance = spot.color.rgb * projection * (cone * light_attenuation(distance_to_light));
     let visibility = shadow_visibility(position.xyz, in.position.xy);
