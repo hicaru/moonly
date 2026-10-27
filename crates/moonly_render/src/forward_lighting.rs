@@ -116,7 +116,7 @@ pub fn moonly_forward_layout_for(stage: ShaderStages) -> BindGroupLayoutDescript
     )
 }
 
-type ForwardViewQuery<'w, 's> = Query<
+pub(crate) type ForwardViewQuery<'w, 's> = Query<
     'w,
     's,
     (
@@ -129,56 +129,19 @@ type ForwardViewQuery<'w, 's> = Query<
 >;
 
 #[derive(SystemParam)]
-pub struct ForwardPrepareInputs<'w> {
-    device: Res<'w, RenderDevice>,
-    queue: Res<'w, RenderQueue>,
-    layout: Res<'w, MoonlyForwardLayout>,
-    environment: Res<'w, WeatherEnvironment>,
-    cache: Res<'w, bevy::render::render_resource::PipelineCache>,
-}
-
-pub(crate) fn prepare_forward_bind_groups(
-    mut commands: Commands,
-    inputs: ForwardPrepareInputs,
-    mut views: ForwardViewQuery,
-) {
-    for (entity, package, shadows, current) in &mut views {
-        let depth = shadows.first_depth();
-        if let Some(mut current) = current {
-            fill_forward_view(
-                &mut current,
-                &inputs.device,
-                &inputs.queue,
-                &inputs.layout,
-                &inputs.cache,
-                &inputs.environment,
-                &package.0,
-                shadows,
-                depth,
-            );
-            continue;
-        }
-        let mut current = MoonlyForwardView::default();
-        fill_forward_view(
-            &mut current,
-            &inputs.device,
-            &inputs.queue,
-            &inputs.layout,
-            &inputs.cache,
-            &inputs.environment,
-            &package.0,
-            shadows,
-            depth,
-        );
-        commands.entity(entity).insert(current);
-    }
+pub(crate) struct ForwardPrepareInputs<'w> {
+    pub(crate) device: Res<'w, RenderDevice>,
+    pub(crate) queue: Res<'w, RenderQueue>,
+    pub(crate) layout: Res<'w, MoonlyForwardLayout>,
+    pub(crate) environment: Res<'w, WeatherEnvironment>,
+    pub(crate) cache: Res<'w, bevy::render::render_resource::PipelineCache>,
 }
 
 #[expect(
     clippy::too_many_arguments,
     reason = "Render preparation requires these resources"
 )]
-fn fill_forward_view(
+pub(crate) fn fill_forward_view(
     view: &mut MoonlyForwardView,
     device: &RenderDevice,
     queue: &RenderQueue,

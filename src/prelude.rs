@@ -26,8 +26,8 @@ pub use moonly_render::{
     GpuTiming, MoonlyCamera, MoonlyCameraRole, MoonlyCasterVisibility, MoonlyDebugView,
     MoonlyExternalFog, MoonlyForwardView, MoonlyGpuDiagnostics, MoonlyLinearOutput,
     MoonlyMaterialAdapters, MoonlyMaterialLut, MoonlyPass, MoonlyPostSettings, MoonlyRender,
-    MoonlyRenderPlugin, MoonlyRenderSystems, MoonlySurface, generate_moonly_material_lut,
-    moonly_forward_layout, moonly_forward_layout_for,
+    MoonlyRenderPlugin, MoonlyRenderSystems, MoonlySurface, SetMoonlyForwardBindGroup,
+    generate_moonly_material_lut, moonly_forward_layout, moonly_forward_layout_for,
 };
 pub use moonly_shadows::{
     CameraFrustumParams, LocalShadowBatch, LocalShadowBatches, LocalShadowView,

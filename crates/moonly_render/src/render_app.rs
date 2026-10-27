@@ -13,11 +13,12 @@ use bevy::{
 use crate::phase::{MoonlyAlphaMask3d, MoonlyOpaque3d, MoonlyShadow3d};
 use crate::{
     MoonlyRender, accumulate, ao, bloom, camera, caster_visibility, combine, depth_copy,
-    diagnostics, extraction, forward_lighting, froxel_pass, gpu_timer, graph, jitter,
-    light_packages, light_volume, luminance, material_adapters, material_lut, mesh_bind_groups,
-    mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post, projector, queue, render_passes,
-    settings, shaders, shadow_bind_groups, shadow_pipeline, shadow_queue, shadow_targets,
-    spot_pipeline, sun_accumulate, surface, transmission, view_targets, volumetrics,
+    diagnostics, extraction, forward_lighting, forward_prepare, froxel_pass, gpu_timer, graph,
+    jitter, light_packages, light_volume, luminance, material_adapters, material_lut,
+    mesh_bind_groups, mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post, projector, queue,
+    render_passes, settings, shaders, shadow_bind_groups, shadow_pipeline, shadow_queue,
+    shadow_targets, spot_pipeline, sun_accumulate, surface, transmission, view_targets,
+    volumetrics,
 };
 
 pub(crate) fn configure_shader_assets(app: &mut App) {
@@ -140,7 +141,7 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                 mesh_bind_groups::prepare_moonly_mesh_bind_groups,
                 shadow_bind_groups::prepare_shadow_mesh_bind_groups,
                 surface::prepare_surface_bind_group,
-                forward_lighting::prepare_forward_bind_groups,
+                forward_prepare::prepare_forward_bind_groups,
             )
                 .in_set(RenderSystems::PrepareBindGroups),
         )
