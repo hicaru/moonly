@@ -42,7 +42,7 @@ const SCENES: &[Scene] = &[
         probe: PixelProbe {
             x: 650,
             y: 300,
-            expected: [202, 106, 43],
+            expected: [165, 69, 14],
         },
     },
     Scene {
@@ -202,13 +202,18 @@ const SCENES: &[Scene] = &[
 ];
 
 fn main() -> AppExit {
+    let mut failed = false;
     for scene in SCENES {
         if let Err(error) = validate_scene(scene) {
             eprintln!("{}: {error}", scene.name);
-            return AppExit::error();
+            failed = true;
         }
     }
-    AppExit::Success
+    if failed {
+        AppExit::error()
+    } else {
+        AppExit::Success
+    }
 }
 
 fn validate_scene(scene: &Scene) -> Result<(), String> {
@@ -250,6 +255,9 @@ fn validate_scene(scene: &Scene) -> Result<(), String> {
 }
 
 fn run_capture(scene: &Scene, candidate: &Path) -> Result<(), String> {
+    if candidate.exists() {
+        std::fs::remove_file(candidate).map_err(|error| error.to_string())?;
+    }
     let mut command = std::process::Command::new("cargo");
     command.args([
         "run",

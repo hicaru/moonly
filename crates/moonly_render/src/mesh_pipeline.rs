@@ -69,6 +69,7 @@ impl SpecializedMeshPipeline for MoonlyMeshPipeline {
         }
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader = self.shader.clone();
+            fragment.shader_defs.push("MOONLY_GBUFFER".into());
             fragment.targets = gbuffer_targets();
         }
         descriptor.layout.push(self.surface_layout.clone());
@@ -77,7 +78,7 @@ impl SpecializedMeshPipeline for MoonlyMeshPipeline {
 }
 
 fn gbuffer_targets() -> Vec<Option<ColorTargetState>> {
-    (0..4)
+    (0..5)
         .map(|_| {
             Some(ColorTargetState {
                 format: GBUFFER_FORMAT,

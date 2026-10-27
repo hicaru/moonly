@@ -9,6 +9,7 @@
 @group(0) @binding(8) var volumetric_texture: texture_2d<f32>;
 @group(0) @binding(9) var local_volumetric_texture: texture_2d<f32>;
 @group(0) @binding(10) var froxel_texture: texture_2d<f32>;
+@group(0) @binding(11) var emissive_texture: texture_2d<f32>;
 
 struct MoonlyEnvironmentUniform {
     ambient: vec4<f32>,
@@ -117,15 +118,22 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
     let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     let accumulator = textureLoad(accumulator_texture, pixel, 0);
+    let emissive = textureLoad(emissive_texture, pixel, 0);
+    let separate_emissive = f32(environment.fog_params.w > 0.5);
+    let accumulated = accumulator.rgb - emissive.rgb * separate_emissive;
     let scalar_ao = textureLoad(ao_texture, pixel, 0).r;
     let ao = select(vec3(scalar_ao), colored_ao(scalar_ao, albedo_gloss.rgb), environment.ao.x >= 2.5);
     let ambient = environment.ambient.rgb + environment.hemi.rgb * environment.hemi.w * MOONLY_HEMI_SCALE;
-    let global_light = albedo_gloss.rgb * ambient * ao + accumulator.rgb;
-    let tracked_light = accumulator.rgb * ao;
-    let direct_color = select(global_light, tracked_light, accumulator.w > 1.5)
+    let global_light = albedo_gloss.rgb * ambient * ao + accumulated;
+    let tracked_light = accumulated * ao;
+    let tracked_only = accumulator.w > 1.5 && environment.fog_params.w < 0.5;
+    let direct_color = select(global_light, tracked_light, tracked_only)
         + textureLoad(volumetric_texture, pixel, 0).rgb
         + local_volume(in.uv, position.xyz);
-    let color = apply_froxel(direct_color, in.uv);
+    let exposure = select(1.0, environment.ambient.a, environment.fog_params.w > 0.5);
+    let emissive_exposure = select(1.0, mix(1.0, exposure, emissive.a), environment.fog_params.w > 0.5);
+    let color = apply_froxel(direct_color, in.uv) * exposure
+        + emissive.rgb * emissive_exposure * separate_emissive;
     let distance_fog = clamp(dot(vec4(position.xyz, 1.0), environment.fog_plane), 0.0, 1.0);
     let height = exp(-environment.fog_params.y * (position.y - environment.fog_params.z));
     let optical_depth = environment.fog_params.x * distance(position.xyz, environment.view_position.xyz) * height;

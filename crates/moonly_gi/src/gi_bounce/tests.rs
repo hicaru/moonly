@@ -101,6 +101,7 @@ fn monolith_sorts_top_n_and_normalizes_total_linear_energy() {
         direction: Vec3::X,
         color: Vec3::splat(energy),
         range: 0.0,
+        render_layers: light.render_layers,
     };
     let mut out = vec![candidate(0.2), candidate(0.6), candidate(0.4)];
     normalize_monolith_lights(&light, &cfg, 0, &mut out);

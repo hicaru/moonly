@@ -21,6 +21,7 @@ use bevy::{
         view::ViewTarget,
     },
 };
+use moonly_post::{Hdr10PostConfig, MoonlyExposureMode};
 
 use crate::{
     camera::MoonlyCamera,
@@ -201,27 +202,51 @@ fn create_luminance_bind_group(
     )
 }
 
+#[derive(SystemParam)]
+pub(crate) struct LuminanceRenderInputs<'w> {
+    cache: Res<'w, PipelineCache>,
+    pipeline: Res<'w, MoonlyLuminancePipeline>,
+    config: Res<'w, Hdr10PostConfig>,
+    timer: Res<'w, crate::gpu_timer::MoonlyGpuTimer>,
+}
+
+type LuminanceView<'w, 's> = ViewQuery<
+    'w,
+    's,
+    (
+        &'static ViewLuminanceTargets,
+        &'static ViewLuminanceBindGroups,
+        Option<&'static crate::MoonlyPostSettings>,
+    ),
+    With<MoonlyCamera>,
+>;
+
 pub(crate) fn render_luminance(
-    view: ViewQuery<(&ViewLuminanceTargets, &ViewLuminanceBindGroups), With<MoonlyCamera>>,
-    cache: Res<PipelineCache>,
-    pipeline: Res<MoonlyLuminancePipeline>,
-    timer: Res<crate::gpu_timer::MoonlyGpuTimer>,
+    view: LuminanceView,
+    inputs: LuminanceRenderInputs,
     mut context: RenderContext,
 ) {
-    if !pipeline
+    let (targets, groups, settings) = view.into_inner();
+    let mode = settings.map_or(inputs.config.exposure_mode, |settings| {
+        settings.exposure_mode
+    });
+    if mode == MoonlyExposureMode::Camera {
+        return;
+    }
+    if !inputs
+        .pipeline
         .frame
         .fetch_add(1, Ordering::Relaxed)
         .is_multiple_of(LUMINANCE_UPDATE_INTERVAL)
     {
         return;
     }
-    let (targets, groups) = view.into_inner();
-    let Some(render_pipeline) = cache.get_render_pipeline(pipeline.id) else {
+    let Some(render_pipeline) = inputs.cache.get_render_pipeline(inputs.pipeline.id) else {
         return;
     };
     trace!("Moonly luminance reduction");
     for (target, group) in targets.targets.iter().zip(groups.0.iter()) {
-        render_luminance_stage(target, group, render_pipeline, &timer, &mut context);
+        render_luminance_stage(target, group, render_pipeline, &inputs.timer, &mut context);
     }
     if let Some(target) = targets.targets.last() {
         schedule_readback(&targets.readback, context.command_encoder(), target);

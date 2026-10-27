@@ -39,6 +39,7 @@ pub use crate::{
         LightPackage, MoonlyLight, MoonlyLightFlags, MoonlyLightType, VirtualGiLight,
         VirtualGiLightPackage, VolumetricLightSettings,
     },
+    native_lights::{MoonlyNativeAmbient, MoonlyNativeForward, MoonlyNativePost},
     projector::MoonlyProjector,
     shader_bus::{SHADER_BUS_SLOT_COUNT, ShaderBus},
     shadow_package::{
@@ -82,6 +83,9 @@ impl Plugin for MoonlyCorePlugin {
             app.add_plugins(ExtractResourcePlugin::<MoonlyShadowPackage>::default());
             app.add_plugins(ExtractResourcePlugin::<MoonlySunPackage>::default());
             app.add_plugins(ExtractResourcePlugin::<VirtualGiLightPackage>::default());
+            app.add_plugins(ExtractResourcePlugin::<MoonlyNativeAmbient>::default());
+            app.add_plugins(ExtractResourcePlugin::<MoonlyNativeForward>::default());
+            app.add_plugins(ExtractResourcePlugin::<MoonlyNativePost>::default());
             app.add_plugins(ExtractComponentPlugin::<MoonlyProjector>::default());
         }
         app.configure_sets(
@@ -104,6 +108,9 @@ impl Plugin for MoonlyCorePlugin {
         .register_type::<MoonlyLight>()
         .register_type::<MoonlyLightType>()
         .register_type::<MoonlyLightFlags>()
+        .register_type::<MoonlyNativeAmbient>()
+        .register_type::<MoonlyNativeForward>()
+        .register_type::<MoonlyNativePost>()
         .register_type::<native_lights::MoonlyNativeLight>()
         .register_type::<VolumetricLightSettings>()
         .register_type::<VirtualGiLight>()
@@ -121,6 +128,11 @@ impl Plugin for MoonlyCorePlugin {
         .init_resource::<VirtualGiLightPackage>()
         .init_resource::<MoonlyShadowPackage>()
         .init_resource::<MoonlySunPackage>()
+        .init_resource::<MoonlyNativeAmbient>()
+        .init_resource::<MoonlyNativeForward>()
+        .init_resource::<MoonlyNativePost>()
+        .init_resource::<bevy::light::PointLightShadowMap>()
+        .init_resource::<bevy::light::DirectionalLightShadowMap>()
         .init_resource::<WeatherEnvironment>()
         .init_resource::<ShaderBus>()
         .add_systems(
@@ -130,6 +142,7 @@ impl Plugin for MoonlyCorePlugin {
                 native_lights::sync_native_point_lights,
                 native_lights::sync_native_spot_lights,
                 native_lights::sync_native_directional_lights,
+                native_lights::sync_native_ambient_light,
                 collect_light_packages,
                 update_hemisphere_trackers,
             )
@@ -180,6 +193,7 @@ mod tests {
     fn light_collection_syncs_origin_rotation_and_scale_from_global_transform() {
         let mut app = App::new();
         app.init_resource::<LightPackage>();
+        app.init_resource::<MoonlyNativeForward>();
         app.add_systems(Update, collect_light_packages);
         let light = MoonlyLight {
             position: Vec3::new(9.0, 8.0, 7.0),

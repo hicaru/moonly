@@ -1,9 +1,9 @@
 //! Frame-level camera selection, cascade updates, rain shadows, and atlas allocation.
 
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{ecs::system::SystemParam, light::DirectionalLightShadowMap, prelude::*};
 use moonly_core::{
-    LightPackage, MoonlyConfig, MoonlyShadowBatch, MoonlyShadowPackage, MoonlyShadowRect,
-    MoonlyShadowView, MoonlySunCascade, MoonlySunPackage, WeatherEnvironment,
+    LightPackage, MoonlyConfig, MoonlyLightFlags, MoonlyShadowBatch, MoonlyShadowPackage,
+    MoonlyShadowRect, MoonlyShadowView, MoonlySunCascade, MoonlySunPackage, WeatherEnvironment,
 };
 
 use crate::{
@@ -16,6 +16,8 @@ use crate::{
 pub struct ShadowFrameParams<'w, 's> {
     config: Res<'w, MoonlyConfig>,
     env: Res<'w, WeatherEnvironment>,
+    directional_shadow_map: Res<'w, DirectionalLightShadowMap>,
+    native_forward: Res<'w, moonly_core::MoonlyNativeForward>,
     package: Res<'w, LightPackage>,
     allocator: ResMut<'w, SmapAllocator>,
     batches: ResMut<'w, LocalShadowBatches>,
@@ -36,6 +38,9 @@ pub struct ShadowFrameParams<'w, 's> {
 
 /// Update sun shadow cascades, rain shadow state, and dynamic SMAP allocations each frame.
 pub fn update_shadow_cascades_and_atlas(mut params: ShadowFrameParams) {
+    if params.native_forward.0 {
+        return;
+    }
     let Some(cam) = active_camera_params(&params.cameras) else {
         return;
     };
@@ -44,13 +49,23 @@ pub fn update_shadow_cascades_and_atlas(mut params: ShadowFrameParams) {
         .v_direct
         .first()
         .map_or(params.env.sun_direction, |light| light.direction);
+    let native_sun = params
+        .package
+        .v_direct
+        .first()
+        .is_some_and(|light| light.flags.contains(MoonlyLightFlags::NATIVE));
+    let sun_pool_size = if native_sun {
+        params
+            .directional_shadow_map
+            .size
+            .clamp(1, u32::MAX as usize) as u32
+    } else {
+        params.config.smap_pool_size
+    };
     params.allocator.begin_frame(params.config.smap_pool_size);
-    params.cascades.compute(
-        &cam,
-        sun_dir,
-        &params.config.sun_cascades,
-        params.config.smap_pool_size,
-    );
+    params
+        .cascades
+        .compute(&cam, sun_dir, &params.config.sun_cascades, sun_pool_size);
     update_rain_shadow(&params.config, &mut params.rain, &cam);
     params.batches.rebuild(
         &params.package,
@@ -68,7 +83,7 @@ pub fn update_shadow_cascades_and_atlas(mut params: ShadowFrameParams) {
         sync_sun_package(
             &params.cascades,
             render_sun,
-            params.config.smap_pool_size,
+            sun_pool_size,
             params.config.sun_cascades.depth_bias,
             params.config.sun_cascades.use_minmax_near,
         );

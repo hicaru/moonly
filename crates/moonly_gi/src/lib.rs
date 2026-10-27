@@ -54,6 +54,7 @@ impl Plugin for MoonlyGiPlugin {
             .register_type::<MoonlyGlow>()
             .register_type::<GiLightField>()
             .register_type::<AmbientOcclusionSettings>()
+            .init_resource::<moonly_core::MoonlyNativeForward>()
             .init_resource::<GiLightField>()
             .init_resource::<VirtualGiLightPackage>()
             .init_resource::<GiLightCache>()

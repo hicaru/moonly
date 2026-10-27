@@ -1,7 +1,7 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 #[cfg(test)]
 use moonly_core::{LightPackage, MoonlyLightType, MoonlyPipelineTier};
-use moonly_core::{MoonlyConfig, MoonlyLight, VirtualGiLightPackage};
+use moonly_core::{MoonlyConfig, MoonlyLight, MoonlyNativeForward, VirtualGiLightPackage};
 
 use crate::gi_bounce::{GiLightField, GiReflectorBox};
 #[cfg(test)]
@@ -20,6 +20,7 @@ pub struct GiSceneInputs<'w, 's> {
     reflectors: Query<'w, 's, &'static GiReflectorBox>,
     changed_reflectors: Query<'w, 's, (), Changed<GiReflectorBox>>,
     geometry: Res<'w, StaticGiGeometry>,
+    native_forward: Res<'w, MoonlyNativeForward>,
 }
 
 #[derive(Default)]
@@ -37,6 +38,12 @@ pub fn update_gi_light_field(
     mut package: ResMut<VirtualGiLightPackage>,
     mut buffers: Local<GiFrameBuffers>,
 ) {
+    if inputs.native_forward.0 {
+        buffers.last_revision = u64::MAX;
+        field.virtual_lights.clear();
+        package.lights.clear();
+        return;
+    }
     let geo_rev = inputs.geometry.revision();
     if !inputs.config.is_changed()
         && geo_rev == buffers.last_revision

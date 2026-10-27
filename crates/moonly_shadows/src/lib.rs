@@ -53,6 +53,8 @@ impl Plugin for MoonlyShadowsPlugin {
             .init_resource::<MoonlySunPackage>()
             .init_resource::<SunCascades>()
             .init_resource::<RainShadowState>()
+            .init_resource::<bevy::light::DirectionalLightShadowMap>()
+            .init_resource::<moonly_core::MoonlyNativeForward>()
             .add_systems(
                 PostUpdate,
                 update_shadow_cascades_and_atlas.in_set(MoonlySystemSet::UpdateShadowsAndGi),

@@ -1,6 +1,18 @@
 use bevy::camera::visibility::RenderLayers;
 
-use crate::MoonlyLight;
+use crate::{MoonlyLight, VirtualGiLight};
+
+impl VirtualGiLight {
+    /// Check whether this virtual light shares a layer with the supplied view.
+    #[must_use]
+    pub fn visible_in_layers(&self, view: &RenderLayers) -> bool {
+        view.bits().iter().enumerate().any(|(index, bits)| {
+            self.render_layers
+                .get(index)
+                .is_some_and(|light_bits| light_bits & bits != 0)
+        })
+    }
+}
 
 impl MoonlyLight {
     /// Check whether this light shares a layer with the supplied view.
@@ -31,6 +43,8 @@ pub(crate) fn sync_render_layers(light: &mut MoonlyLight, layers: Option<&Render
 
 #[cfg(test)]
 mod tests {
+    use bevy::prelude::Vec3;
+
     use super::*;
 
     #[test]
@@ -41,6 +55,20 @@ mod tests {
         assert!(light.visible_in_layers(&RenderLayers::layer(63)));
         assert!(!light.visible_in_layers(&RenderLayers::layer(0)));
         assert!(!light.visible_in_layers(&RenderLayers::none()));
+    }
+
+    #[test]
+    fn virtual_lights_inherit_source_layer_visibility() {
+        let light = MoonlyLight::default();
+        let virtual_light = VirtualGiLight {
+            position: Vec3::ZERO,
+            direction: Vec3::Y,
+            color: Vec3::ONE,
+            range: 1.0,
+            render_layers: light.render_layers,
+        };
+        assert!(virtual_light.visible_in_layers(&RenderLayers::layer(0)));
+        assert!(!virtual_light.visible_in_layers(&RenderLayers::layer(1)));
     }
 
     #[test]

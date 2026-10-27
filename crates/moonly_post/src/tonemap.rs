@@ -50,6 +50,16 @@ impl TonemapOperator {
     }
 }
 
+/// Exposure source for Moonly post-processing.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Reflect)]
+pub enum MoonlyExposureMode {
+    /// Use temporal scene-luminance adaptation and the configured exposure multiplier.
+    #[default]
+    LuminanceAdaptation,
+    /// Use the camera `Exposure` multiplier directly.
+    Camera,
+}
+
 /// HDR10 post-processing configuration resource (`hdr10.h`).
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Reflect)]
 #[reflect(Resource)]
@@ -58,6 +68,8 @@ pub struct Hdr10PostConfig {
     pub operator: TonemapOperator,
     /// Exposure multiplier before tonemapping.
     pub exposure: f32,
+    /// Exposure source for the camera and bloom passes.
+    pub exposure_mode: MoonlyExposureMode,
     /// Piecewise contrast adjustment (`[-0.5, 0.5]`).
     pub contrast: f32,
     /// Saturation-aware vibrance adjustment (`[-0.5, 0.5]`).
@@ -75,6 +87,7 @@ impl Default for Hdr10PostConfig {
         Self {
             operator: TonemapOperator::AcesHill,
             exposure: 1.1,
+            exposure_mode: MoonlyExposureMode::LuminanceAdaptation,
             contrast: 0.05,
             vibrance: 0.08,
             bloom_intensity: 0.22,

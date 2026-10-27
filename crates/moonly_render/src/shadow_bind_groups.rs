@@ -8,12 +8,13 @@ use bevy::{
     pbr::{MeshPipeline, MeshUniform, RenderMeshInstances, SkinUniforms},
     prelude::*,
     render::{
-        batching::gpu_preprocessing::PhaseBatchedInstanceBuffers,
         mesh::{
             MeshMetadataFallbackBuffer,
             allocator::{MeshAllocator, MeshSlabId},
         },
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
+        render_phase::{
+            PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult, TrackedRenderPass,
+        },
         render_resource::{BindGroup, PipelineCache},
         renderer::RenderDevice,
     },
@@ -34,7 +35,13 @@ pub(crate) struct MoonlyShadowMeshBindGroups {
 
 #[derive(SystemParam)]
 pub(crate) struct ShadowBindGroupInputs<'w> {
-    phase_buffers: Res<'w, PhaseBatchedInstanceBuffers<MoonlyShadow3d, MeshUniform>>,
+    phase_buffers: Res<
+        'w,
+        bevy::render::batching::gpu_preprocessing::PhaseBatchedInstanceBuffers<
+            MoonlyShadow3d,
+            MeshUniform,
+        >,
+    >,
     pipeline: Res<'w, MeshPipeline>,
     device: Res<'w, RenderDevice>,
     pipeline_cache: Res<'w, PipelineCache>,
@@ -75,14 +82,11 @@ pub(crate) fn prepare_shadow_mesh_bind_groups(
     }
 }
 
-pub(crate) struct SetMoonlyShadowMeshBindGroup<const I: usize>;
+pub(crate) struct CullMoonlyShadow;
 
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyShadowMeshBindGroup<I> {
+impl<P: PhaseItem> RenderCommand<P> for CullMoonlyShadow {
     type Param = (
-        SRes<MoonlyShadowMeshBindGroups>,
         SRes<RenderMeshInstances>,
-        SRes<MeshAllocator>,
-        SRes<MeshMetadataFallbackBuffer>,
         SRes<SkinUniforms>,
         SRes<MoonlyMeshBounds>,
         SRes<MoonlyCasterVisibility>,
@@ -97,14 +101,9 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyShadowMeshBindG
         item: &P,
         (target, index): ROQueryItem<'w, '_, Self::ViewQuery>,
         transform: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
-        (groups, instances, allocator, fallback, skins, bounds, caster_visibility): SystemParamItem<
-            'w,
-            '_,
-            Self::Param,
-        >,
-        pass: &mut TrackedRenderPass<'w>,
+        (instances, skins, bounds, caster_visibility): SystemParamItem<'w, '_, Self::Param>,
+        _pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let groups = groups.into_inner();
         let Some(mesh_id) = instances.mesh_asset_id(item.main_entity()) else {
             return RenderCommandResult::Skip;
         };
@@ -129,19 +128,51 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyShadowMeshBindG
                 return RenderCommandResult::Skip;
             }
         }
+        RenderCommandResult::Success
+    }
+}
+
+pub(crate) struct SetMoonlyShadowMeshBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyShadowMeshBindGroup<I> {
+    type Param = (
+        SRes<MoonlyShadowMeshBindGroups>,
+        SRes<RenderMeshInstances>,
+        SRes<MeshAllocator>,
+        SRes<MeshMetadataFallbackBuffer>,
+        SRes<SkinUniforms>,
+    );
+    type ViewQuery = ();
+    type ItemQuery = ();
+
+    fn render<'w>(
+        item: &P,
+        _view: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _entity: Option<()>,
+        (groups, instances, allocator, fallback, skins): SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let groups = groups.into_inner();
+        let Some(mesh_id) = instances.mesh_asset_id(item.main_entity()) else {
+            return RenderCommandResult::Skip;
+        };
         let slab = allocator
             .mesh_slabs(&mesh_id)
             .and_then(|slabs| slabs.metadata_slab_id)
             .unwrap_or(fallback.slab_id);
-        let bind_group = if skinned {
+        let bind_group = if skins.skin_byte_offset(item.main_entity()).is_some() {
             groups.skinned.get(&slab)
         } else {
             groups.model_only.get(&slab)
         };
         let Some(bind_group) = bind_group else {
-            return RenderCommandResult::Failure("Moonly shadow mesh bind group is not prepared");
+            return RenderCommandResult::Skip;
         };
-        pass.set_bind_group(I, bind_group, &[]);
+        if let PhaseItemExtraIndex::DynamicOffset(offset) = item.extra_index() {
+            pass.set_bind_group(I, bind_group, &[offset]);
+        } else {
+            pass.set_bind_group(I, bind_group, &[]);
+        }
         RenderCommandResult::Success
     }
 }

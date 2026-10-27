@@ -1,4 +1,5 @@
 use bevy::{
+    asset::embedded_asset,
     prelude::*,
     render::{
         diagnostic::RecordDiagnostics,
@@ -16,6 +17,13 @@ use crate::{
     spot_pipeline::MoonlySpotPipeline,
     view_targets::MoonlyViewTargets,
 };
+
+pub(crate) mod native;
+
+pub(crate) fn register_assets(app: &mut App) {
+    embedded_asset!(app, "accum_spot.wesl");
+    embedded_asset!(app, "accum_native.wesl");
+}
 
 pub(crate) fn prepare_occlusion(
     mut commands: Commands,
@@ -111,12 +119,13 @@ pub(crate) fn render_spot_accumulation(
             pass.set_stencil_reference(stencil_reference);
             pass.draw_indexed(0..index_count, 0, 0..1);
         }
+        // Keep shading outside the query to avoid feedback from the previous visibility result.
+        pass.wgpu_pass().end_occlusion_query();
         if occlusion.is_visible(binding.key) {
             pass.set_render_pipeline(shade);
             pass.set_stencil_reference(5);
             pass.draw_indexed(0..index_count, 0, 0..1);
         }
-        pass.wgpu_pass().end_occlusion_query();
     }
     span.end(&mut pass);
     drop(pass);

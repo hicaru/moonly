@@ -54,7 +54,7 @@ impl ExtractResource<RenderApp> for LuminanceAdaptationState {
 }
 
 impl LuminanceAdaptationState {
-    /// Step temporal luminance adaptation (`f_luminance_adapt = 0.9 * prev + 0.1 * dt * speed * target`).
+    /// Step temporal luminance adaptation with frame-rate-independent history weights.
     pub fn step_adaptation(&mut self, dt: f32) {
         let step_weight = (LUMINANCE_HISTORY_BLEND * dt * self.adaptation_speed).clamp(0.0, 1.0);
         let keep_weight = (1.0 - step_weight).max(LUMINANCE_HISTORY_KEEP * (1.0 - dt.min(0.5)));
@@ -71,7 +71,7 @@ impl LuminanceAdaptationState {
             .clamp(self.min_exposure, self.max_exposure)
     }
 
-    /// Reduce an array of linear RGB samples to log-average luminance (`256 -> 64 -> 8 -> 1`).
+    /// Reduce linear RGB samples to log-average luminance (`256 -> 64 -> 8 -> 1`).
     #[must_use]
     pub fn reduce_log_luminance(samples: &[Vec3]) -> f32 {
         if samples.is_empty() {

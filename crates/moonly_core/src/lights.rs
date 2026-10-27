@@ -34,6 +34,8 @@ impl MoonlyLightFlags {
     pub const GI_ENABLED: Self = Self(1 << 3);
     /// Light is a virtual indirect bounce source (`bVirtualGI`).
     pub const VIRTUAL_GI: Self = Self(1 << 4);
+    /// Light uses native Bevy intensity, attenuation, and BRDF semantics.
+    pub const NATIVE: Self = Self(1 << 5);
 
     /// Check whether all bits in `other` are present.
     #[must_use]
@@ -95,6 +97,8 @@ pub struct MoonlyLight {
     pub render_layers: [u64; 4],
     /// Explicit shadow map resolution override (`0` uses automatic SSA sizing).
     pub smap_size_override: u16,
+    /// Near plane distance for the local shadow map in meters.
+    pub shadow_near_z: f32,
     /// Stable source entity for cache and render identity.
     pub source_entity: Option<Entity>,
     /// Original point light for an omnipart face.
@@ -119,6 +123,7 @@ impl Default for MoonlyLight {
             inner_cone_angle: -1.0,
             render_layers: [1, 0, 0, 0],
             smap_size_override: 0,
+            shadow_near_z: 0.01,
             source_entity: None,
             omnipart_parent: None,
             omnipart_face: None,
@@ -168,6 +173,8 @@ pub struct VirtualGiLight {
     pub color: Vec3,
     /// Virtual light radius derived from energy and pipeline mode.
     pub range: f32,
+    /// View layer bitmask inherited from the source light.
+    pub render_layers: [u64; 4],
 }
 
 /// Complete virtual light set prepared for reflected-light accumulation.

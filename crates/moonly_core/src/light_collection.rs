@@ -15,7 +15,15 @@ type MoonlyLightQuery<'w, 's> = Query<
 >;
 
 /// Synchronize visible `MoonlyLight` entities and populate the frame `LightPackage`.
-pub fn collect_light_packages(mut package: ResMut<LightPackage>, mut query: MoonlyLightQuery) {
+pub fn collect_light_packages(
+    mut package: ResMut<LightPackage>,
+    native: Res<crate::MoonlyNativeForward>,
+    mut query: MoonlyLightQuery,
+) {
+    if native.0 {
+        package.clear();
+        return;
+    }
     package.clear();
     for (entity, mut light, transform, visibility, layers) in &mut query {
         if visibility.is_some_and(|visibility| !visibility.get()) {

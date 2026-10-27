@@ -132,6 +132,7 @@ pub fn gi_generate_monolith<G: GiRayGeometry + ?Sized>(
             direction: direction - hit.normal * (2.0 * direction.dot(hit.normal)),
             color: Vec3::splat(energy),
             range: 0.0,
+            render_layers: light.render_layers,
         });
     }
     normalize_monolith_lights(light, cfg, first, out_virtual);
@@ -271,6 +272,7 @@ fn push_virtual_bounce(
         direction: normal,
         color,
         range: virtual_range,
+        render_layers: light.render_layers,
     });
 }
 

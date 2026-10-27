@@ -51,25 +51,34 @@ impl CaptureOptions {
 pub(crate) struct CaptureState {
     finished: bool,
     failed: bool,
+    shutdown_started: bool,
+    shutdown_frames: u8,
+}
+
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct CaptureExit<'w, 's> {
+    exit: MessageWriter<'w, AppExit>,
+    close: MessageWriter<'w, bevy::window::WindowCloseRequested>,
+    windows: Query<'w, 's, Entity, With<Window>>,
 }
 
 pub(crate) fn capture_system(
     mut commands: Commands,
     options: Res<CaptureOptions>,
-    state: Res<CaptureState>,
-    mut exit: MessageWriter<AppExit>,
+    mut state: ResMut<CaptureState>,
+    mut exit: CaptureExit,
     mut frame: Local<u32>,
 ) {
     *frame += 1;
     if state.failed {
-        exit.write(AppExit::error());
+        exit.exit.write(AppExit::error());
         return;
     }
     if options.screenshot_frame == Some(*frame) {
         spawn_screenshot(&mut commands, &options);
     }
     if options.exit_frame.is_some_and(|limit| *frame >= limit) {
-        finish_capture(&options, &state, *frame, &mut exit);
+        finish_capture(&options, &mut state, *frame, &mut exit);
     }
 }
 
@@ -105,15 +114,26 @@ fn spawn_screenshot(commands: &mut Commands, options: &CaptureOptions) {
 
 fn finish_capture(
     options: &CaptureOptions,
-    state: &CaptureState,
+    state: &mut CaptureState,
     frame: u32,
-    exit: &mut MessageWriter<AppExit>,
+    exit: &mut CaptureExit,
 ) {
-    if options.screenshot_frame.is_none() || state.finished {
-        exit.write(AppExit::Success);
-    } else {
+    if options.screenshot_frame.is_some() && !state.finished {
         error!("Screenshot did not finish before --exit-after at frame {frame}");
-        exit.write(AppExit::error());
+        exit.exit.write(AppExit::error());
+        return;
+    }
+    if !state.shutdown_started {
+        state.shutdown_started = true;
+        for window in &exit.windows {
+            exit.close
+                .write(bevy::window::WindowCloseRequested { window });
+        }
+        return;
+    }
+    state.shutdown_frames += 1;
+    if state.shutdown_frames >= 3 {
+        exit.exit.write(AppExit::Success);
     }
 }
 
@@ -137,6 +157,17 @@ fn save_and_validate(image: &Image, path: &Path) -> Result<CaptureReport, String
         .clone()
         .try_into_dynamic()
         .map_err(|error| error.to_string())?;
+    if matches!(
+        dynamic,
+        image::DynamicImage::ImageRgb32F(_) | image::DynamicImage::ImageRgba32F(_)
+    ) {
+        let linear = dynamic.clone().into_rgb32f();
+        let center = (linear.width() / 2, linear.height() / 2);
+        info!(
+            "capture linear center: {:?}",
+            linear.get_pixel(center.0, center.1).0
+        );
+    }
     encode_screenshot(dynamic)
         .save(path)
         .map_err(|error| error.to_string())?;

@@ -16,9 +16,9 @@ use bevy::{
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::ViewTarget,
     },
-    shader::Shader,
+    shader::{Shader, ShaderDefVal},
 };
-use moonly_post::{Hdr10PostConfig, LuminanceAdaptationState, OpticsMode};
+use moonly_post::{Hdr10PostConfig, OpticsMode};
 
 use crate::{
     camera::{MoonlyCamera, MoonlyCameraRole, MoonlyLinearOutput},
@@ -50,30 +50,47 @@ struct MoonlyPostUniform {
     bloom: Vec4,
     modes: UVec4,
     display: Vec4,
+    grading: Vec4,
 }
 
 impl MoonlyPostUniform {
     fn new(
-        config: &Hdr10PostConfig,
-        adaptation: &LuminanceAdaptationState,
+        settings: &crate::MoonlyPostSettings,
         optics: OpticsMode,
         linear: bool,
+        camera_exposure: f32,
     ) -> Self {
         Self {
             exposure: Vec4::new(
-                config.exposure * adaptation.compute_exposure_scale(),
-                config.contrast,
-                config.vibrance,
-                0.0,
+                camera_exposure,
+                settings.contrast,
+                settings.saturation,
+                settings.grading_exposure,
             ),
-            bloom: Vec4::new(config.bloom_intensity, config.flare_intensity, 0.0, 0.0),
+            bloom: Vec4::new(
+                settings.bloom_intensity,
+                settings.flare_intensity,
+                settings.bloom_threshold,
+                settings.bloom_softness,
+            ),
             modes: UVec4::new(
-                config.operator.shader_index(),
+                settings.operator.shader_index(),
                 optics.shader_index(),
                 u32::from(linear),
-                0,
+                u32::from(settings.exposure_mode != moonly_post::MoonlyExposureMode::Camera),
             ),
-            display: Vec4::new(config.max_nits, 0.0, 0.0, 0.0),
+            display: Vec4::new(
+                settings.max_nits,
+                settings.vignette_intensity,
+                settings.vignette_radius,
+                settings.vignette_smoothness,
+            ),
+            grading: Vec4::new(
+                settings.temperature,
+                settings.tint,
+                settings.chromatic_aberration,
+                0.0,
+            ),
         }
     }
 }
@@ -111,6 +128,10 @@ impl SpecializedRenderPipeline for MoonlyPostPipeline {
             vertex: self.fullscreen.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
+                shader_defs: vec![ShaderDefVal::Bool(
+                    "MOONLY_HDR10".into(),
+                    key.format == TextureFormat::Rgb10a2Unorm,
+                )],
                 targets: vec![Some(ColorTargetState {
                     format: key.format,
                     blend: key.overlay.then_some(BlendState::ALPHA_BLENDING),
@@ -150,33 +171,37 @@ pub(crate) struct PostPrepareInputs<'w> {
     cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyPostPipeline>,
     config: Res<'w, Hdr10PostConfig>,
-    adaptation: Res<'w, LuminanceAdaptationState>,
+    adaptation: Res<'w, moonly_post::LuminanceAdaptationState>,
     optics: Res<'w, OpticsMode>,
 }
+
+type PostView = (
+    Entity,
+    &'static crate::settings::MoonlyExposure,
+    &'static MoonlyViewTargets,
+    &'static ViewTarget,
+    Option<&'static MoonlyLinearOutput>,
+    Option<&'static crate::MoonlyPostSettings>,
+);
 
 pub(crate) fn prepare_post_bind_groups(
     mut commands: Commands,
     inputs: PostPrepareInputs,
-    views: Query<
-        (
-            Entity,
-            &MoonlyViewTargets,
-            &ViewTarget,
-            Option<&MoonlyLinearOutput>,
-        ),
-        With<MoonlyCamera>,
-    >,
+    views: Query<PostView, With<MoonlyCamera>>,
 ) {
-    for (entity, targets, target, linear) in &views {
+    for (entity, camera, targets, target, linear, settings) in &views {
+        let settings = settings
+            .copied()
+            .unwrap_or_else(|| crate::MoonlyPostSettings::from_config(&inputs.config));
         let uniform = MoonlyPostUniform::new(
-            &inputs.config,
-            &inputs.adaptation,
+            &settings,
             *inputs.optics,
             linear.is_some(),
+            settings.exposure(camera.0, &inputs.config, &inputs.adaptation),
         );
         let mut uniform = UniformBuffer::from(uniform);
         uniform.write_buffer(&inputs.device, &inputs.queue);
-        let bloom = targets.bloom.first().unwrap_or(&targets.scene);
+        let bloom = targets.bloom.first().unwrap_or(&targets.emissive);
         let group = inputs.device.create_bind_group(
             Some("moonly_post_bind_group"),
             &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),

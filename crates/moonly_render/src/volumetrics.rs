@@ -193,8 +193,15 @@ fn create_volumetric_bind_group(
     ))
 }
 
+type VolumetricView<'w, 's> = ViewQuery<
+    'w,
+    's,
+    (&'static MoonlyViewTargets, &'static ViewVolumetricBindGroup),
+    (With<MoonlyCamera>, Without<crate::MoonlyExternalFog>),
+>;
+
 pub(crate) fn render_volumetrics(
-    view: ViewQuery<(&MoonlyViewTargets, &ViewVolumetricBindGroup), With<MoonlyCamera>>,
+    view: VolumetricView,
     cache: Res<PipelineCache>,
     pipeline: Res<MoonlyVolumetricPipeline>,
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,

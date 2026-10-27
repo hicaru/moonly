@@ -5,16 +5,20 @@ use bevy::{
         query::ROQueryItem,
         system::{SystemParam, SystemParamItem, lifetimeless::SRes},
     },
-    pbr::{MeshPipeline, MeshUniform, RenderMeshInstances, SkinUniforms},
+    pbr::{
+        MeshBindGroups, MeshPipeline, MeshUniform, MorphIndices, RenderLightmaps,
+        RenderMeshInstances, SetMeshBindGroup, SkinUniforms,
+    },
     prelude::*,
     render::{
-        batching::gpu_preprocessing::PhaseBatchedInstanceBuffers,
         mesh::{
             MeshMetadataFallbackBuffer, RenderMesh, RenderMeshBufferInfo,
             allocator::{MeshAllocator, MeshSlabId},
         },
         render_asset::RenderAssets,
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
+        render_phase::{
+            PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult, TrackedRenderPass,
+        },
         render_resource::{BindGroup, PipelineCache},
         renderer::RenderDevice,
     },
@@ -30,7 +34,13 @@ pub(crate) struct MoonlyMeshBindGroups {
 
 #[derive(SystemParam)]
 pub(crate) struct MoonlyBindGroupInputs<'w> {
-    phase_buffers: Res<'w, PhaseBatchedInstanceBuffers<MoonlyOpaque3d, MeshUniform>>,
+    phase_buffers: Res<
+        'w,
+        bevy::render::batching::gpu_preprocessing::PhaseBatchedInstanceBuffers<
+            MoonlyOpaque3d,
+            MeshUniform,
+        >,
+    >,
     pipeline: Res<'w, MeshPipeline>,
     device: Res<'w, RenderDevice>,
     pipeline_cache: Res<'w, PipelineCache>,
@@ -105,10 +115,44 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyMeshBindGroup<I
             groups.model_only.get(&slab)
         };
         let Some(bind_group) = bind_group else {
-            return RenderCommandResult::Failure("Moonly mesh bind group is not prepared");
+            return RenderCommandResult::Skip;
         };
-        pass.set_bind_group(I, bind_group, &[]);
+        if let PhaseItemExtraIndex::DynamicOffset(offset) = item.extra_index() {
+            pass.set_bind_group(I, bind_group, &[offset]);
+        } else {
+            pass.set_bind_group(I, bind_group, &[]);
+        }
         RenderCommandResult::Success
+    }
+}
+
+pub(crate) struct SetMoonlyMotionMeshBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyMotionMeshBindGroup<I> {
+    type Param = (
+        SRes<RenderDevice>,
+        SRes<MeshBindGroups>,
+        SRes<RenderMeshInstances>,
+        SRes<SkinUniforms>,
+        SRes<MorphIndices>,
+        SRes<MeshAllocator>,
+        SRes<RenderLightmaps>,
+        SRes<MeshMetadataFallbackBuffer>,
+    );
+    type ViewQuery = Has<bevy::core_pipeline::prepass::MotionVectorPrepass>;
+    type ItemQuery = ();
+
+    fn render<'w>(
+        item: &P,
+        motion_vectors: bool,
+        entity: Option<()>,
+        params: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        if !motion_vectors {
+            return RenderCommandResult::Success;
+        }
+        SetMeshBindGroup::<I>::render(item, motion_vectors, entity, params, pass)
     }
 }
 
@@ -171,6 +215,7 @@ pub(crate) type DrawMoonlyMesh = (
     bevy::pbr::SetPrepassViewBindGroup<0>,
     bevy::pbr::SetPrepassViewEmptyBindGroup<1>,
     SetMoonlyMeshBindGroup<2>,
+    SetMoonlyMotionMeshBindGroup<2>,
     bevy::pbr::SetMaterialBindGroup<3>,
     crate::surface::SetMoonlySurfaceBindGroup<4>,
     DrawMoonlyMeshDirect,

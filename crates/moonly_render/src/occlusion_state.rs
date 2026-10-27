@@ -17,6 +17,18 @@ use wgpu::{QuerySet, QuerySetDescriptor, QueryType};
 pub(crate) struct MoonlyLightKey {
     pub source_entity: Option<Entity>,
     pub omnipart_face: Option<u8>,
+    /// Stable index for an independent virtual light occlusion result.
+    pub virtual_index: Option<u64>,
+}
+
+impl MoonlyLightKey {
+    pub(crate) const fn virtual_light(index: usize) -> Self {
+        Self {
+            source_entity: None,
+            omnipart_face: None,
+            virtual_index: Some(index as u64),
+        }
+    }
 }
 
 #[derive(Component)]
@@ -117,6 +129,10 @@ impl MoonlyOcclusionState {
             self.pending.store(false, Ordering::Release);
             return;
         };
+        if keys.is_empty() {
+            self.pending.store(false, Ordering::Release);
+            return;
+        }
         scheduled.clear();
         scheduled.extend_from_slice(&keys);
         encoder.resolve_query_set(&self.query_set, 0..keys.len() as u32, readback, 0);
@@ -181,14 +197,25 @@ mod tests {
         let first = MoonlyLightKey {
             source_entity: Some(world.spawn_empty().id()),
             omnipart_face: None,
+            virtual_index: None,
         };
         let second = MoonlyLightKey {
             source_entity: Some(world.spawn_empty().id()),
             omnipart_face: Some(3),
+            virtual_index: None,
         };
         let mut visible = Vec::new();
         apply_samples(&mut visible, &[first, second], &[1, 0]);
         apply_samples(&mut visible, &[second, first], &[2, 0]);
+        assert_eq!(visible, vec![(first, false), (second, true)]);
+    }
+
+    #[test]
+    fn virtual_lights_have_independent_occlusion_results() {
+        let first = MoonlyLightKey::virtual_light(0);
+        let second = MoonlyLightKey::virtual_light(1);
+        let mut visible = Vec::new();
+        apply_samples(&mut visible, &[first, second], &[0, 4]);
         assert_eq!(visible, vec![(first, false), (second, true)]);
     }
 }

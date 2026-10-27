@@ -22,7 +22,6 @@ use moonly_core::{LightPackage, MoonlyLight, MoonlySunCascade};
 
 use crate::{
     camera::MoonlyCamera,
-    material_lut::MoonlyMaterialLutTexture,
     projector::MoonlyFallbackProjector,
     shadow_targets::MoonlySpotShadowTarget,
     view_targets::{GBUFFER_FORMAT, MoonlyViewTargets},
@@ -59,7 +58,13 @@ impl MoonlySunUniform {
             view_position: view.world_from_view.translation().extend(shadow_texel),
             view_forward: view.world_from_view.forward().as_vec3().extend(0.0),
             direction_bias: light.direction.extend(depth_bias),
-            color: light.color.extend(1.0),
+            color: light.color.extend(
+                if light.flags.contains(moonly_core::MoonlyLightFlags::NATIVE) {
+                    1.0
+                } else {
+                    0.0
+                },
+            ),
             splits_near: Vec4::new(
                 cascades.first().map_or(0.0, |cascade| cascade.split_near),
                 split(0),
@@ -180,8 +185,8 @@ pub(crate) struct SunPrepareInputs<'w> {
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlySunPipeline>,
     cascades: Res<'w, moonly_core::MoonlySunPackage>,
-    lut: Res<'w, MoonlyMaterialLutTexture>,
     fallback: Res<'w, MoonlyFallbackProjector>,
+    lut: Res<'w, crate::material_lut::MoonlyMaterialLutTexture>,
     jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
 }
 

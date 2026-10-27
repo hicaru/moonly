@@ -142,6 +142,7 @@ fn prepare_batch(
         let key = MoonlyLightKey {
             source_entity: light.source_entity,
             omnipart_face: light.omnipart_face,
+            virtual_index: None,
         };
         let layer_visible = context.package.v_shadowed.iter().any(|candidate| {
             candidate.source_entity == light.source_entity

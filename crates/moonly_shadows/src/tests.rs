@@ -14,6 +14,8 @@ fn shadow_app(config: MoonlyConfig) -> App {
         .init_resource::<LocalShadowBatches>()
         .init_resource::<SunCascades>()
         .init_resource::<RainShadowState>()
+        .init_resource::<moonly_core::MoonlyNativeForward>()
+        .init_resource::<bevy::light::DirectionalLightShadowMap>()
         .add_systems(Update, update_shadow_cascades_and_atlas);
     app
 }

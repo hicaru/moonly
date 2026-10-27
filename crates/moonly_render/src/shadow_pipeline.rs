@@ -4,7 +4,7 @@ use bevy::{
     asset::{AssetServer, Handle, load_embedded_asset},
     ecs::system::SystemParamItem,
     material::{MaterialProperties, key::ErasedMaterialPipelineKey},
-    pbr::{PrepassPipeline, PrepassPipelineSpecializer},
+    pbr::{MeshPipelineKey, PrepassPipeline, PrepassPipelineSpecializer},
     prelude::*,
     render::{
         mesh::MeshVertexBufferLayoutRef,
@@ -108,6 +108,10 @@ impl SpecializedMeshPipeline for MoonlyShadowMeshPipeline {
         key: Self::Key,
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
+        let may_discard = key
+            .mesh_key
+            .downcast::<MeshPipelineKey>()
+            .contains(MeshPipelineKey::MAY_DISCARD);
         let mut descriptor = self.prepass.specialize(key, layout)?;
         descriptor.label = Some("moonly_shadow_depth_pipeline".into());
         descriptor.vertex.shader = self.pipeline.shader.clone();
@@ -116,6 +120,14 @@ impl SpecializedMeshPipeline for MoonlyShadowMeshPipeline {
             targets: Vec::new(),
             ..fragment
         });
+        if may_discard && descriptor.fragment.is_none() {
+            descriptor.fragment = Some(FragmentState {
+                shader: self.pipeline.shader.clone(),
+                shader_defs: descriptor.vertex.shader_defs.clone(),
+                targets: Vec::new(),
+                ..default()
+            });
+        }
         descriptor.layout.push(self.pipeline.view_layout.clone());
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
             depth.format = DEPTH_FORMAT;
