@@ -193,6 +193,7 @@ mod tests {
         let shaders = [
             ("crates/moonly_core/src", "package::core_common"),
             ("crates/moonly_shadows/src", "package::shadows"),
+            ("crates/moonly_render/src", "package::forward_lighting"),
             ("crates/moonly_gi/src", "package::gi"),
             ("crates/moonly_volumetrics/src", "package::volumetrics"),
             ("crates/moonly_post/src", "package::tonemap"),

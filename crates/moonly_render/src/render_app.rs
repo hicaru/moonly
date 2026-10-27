@@ -13,8 +13,8 @@ use bevy::{
 use crate::phase::{MoonlyAlphaMask3d, MoonlyOpaque3d, MoonlyShadow3d};
 use crate::{
     MoonlyRender, accumulate, ao, bloom, camera, caster_visibility, combine, depth_copy,
-    diagnostics, extraction, froxel_pass, gpu_timer, graph, jitter, light_packages, light_volume,
-    luminance, material_adapters, material_lut, mesh_bind_groups,
+    diagnostics, extraction, forward_lighting, froxel_pass, gpu_timer, graph, jitter,
+    light_packages, light_volume, luminance, material_adapters, material_lut, mesh_bind_groups,
     mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post, projector, queue, render_passes,
     settings, shaders, shadow_bind_groups, shadow_pipeline, shadow_queue, shadow_targets,
     spot_pipeline, sun_accumulate, surface, transmission, view_targets, volumetrics,
@@ -26,6 +26,7 @@ pub(crate) fn configure_shader_assets(app: &mut App) {
     }
     load_shader_library!(app, "lighting.wesl");
     load_shader_library!(app, "gbuffer_surface.wesl");
+    load_shader_library!(app, "forward_lighting.wesl");
     embedded_asset!(app, "gbuffer.wesl");
     embedded_asset!(app, "ao.wesl");
     embedded_asset!(app, "bloom.wesl");
@@ -72,6 +73,7 @@ pub(crate) fn configure_render_app(render_app: &mut SubApp) {
             )
                 .run_if(settings::native_forward_disabled),
         )
+        .add_systems(RenderStartup, forward_lighting::init_forward_layout)
         .add_systems(
             RenderStartup,
             (
@@ -138,6 +140,7 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                 mesh_bind_groups::prepare_moonly_mesh_bind_groups,
                 shadow_bind_groups::prepare_shadow_mesh_bind_groups,
                 surface::prepare_surface_bind_group,
+                forward_lighting::prepare_forward_bind_groups,
             )
                 .in_set(RenderSystems::PrepareBindGroups),
         )
@@ -163,4 +166,5 @@ fn configure_draw_commands(render_app: &mut SubApp) {
         .init_gpu_resource::<SpecializedRenderPipelines<post::MoonlyPostPipeline>>()
         .allow_ambiguous_resource::<SpecializedRenderPipelines<combine::MoonlyCombinePipeline>>()
         .allow_ambiguous_resource::<SpecializedRenderPipelines<post::MoonlyPostPipeline>>();
+    forward_lighting::register_forward_draws(render_app);
 }

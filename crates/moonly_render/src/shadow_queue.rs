@@ -64,6 +64,7 @@ pub(crate) struct ShadowQueueResources<'w> {
     allocator: Res<'w, MeshAllocator>,
     pipeline_cache: Res<'w, PipelineCache>,
     pipeline: Res<'w, MoonlyShadowPipeline>,
+    adapters: Res<'w, crate::MoonlyMaterialAdapters>,
 }
 
 type ViewQuery = (
@@ -131,7 +132,10 @@ fn queue_shadow_entity(
     let Some(material_instance) = resources.material_instances.instances.get(&main_entity) else {
         return;
     };
-    if material_instance.asset_id.type_id() != TypeId::of::<StandardMaterial>() {
+    let material_type = material_instance.asset_id.type_id();
+    if material_type != TypeId::of::<StandardMaterial>()
+        && resources.adapters.get(material_type).is_none()
+    {
         return;
     }
     let Some(mesh_instance) = resources.instances.render_mesh_queue_data(main_entity) else {

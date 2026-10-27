@@ -29,7 +29,9 @@ pub struct MoonlyRender;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MoonlyRenderSystems {
     DeferredPass,
+    ExternalFog,
     TransmissivePass,
+    ExternalFogComposite,
     MainPass,
     PostProcess,
 }
@@ -43,7 +45,9 @@ pub(crate) fn base_schedule() -> Schedule {
     schedule.configure_sets(
         (
             MoonlyRenderSystems::DeferredPass,
+            MoonlyRenderSystems::ExternalFog,
             MoonlyRenderSystems::TransmissivePass,
+            MoonlyRenderSystems::ExternalFogComposite,
             MoonlyRenderSystems::MainPass,
             MoonlyRenderSystems::PostProcess,
         )
