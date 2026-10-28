@@ -45,12 +45,13 @@ pub fn moonly_forward_layout() -> BindGroupLayoutDescriptor {
     moonly_forward_layout_for(ShaderStages::FRAGMENT)
 }
 
+/// Share one forward light group between render materials and external compute passes.
 #[must_use]
 pub fn moonly_forward_layout_for(stage: ShaderStages) -> BindGroupLayoutDescriptor {
     BindGroupLayoutDescriptor::new(
         "moonly_forward_layout",
         &BindGroupLayoutEntries::sequential(
-            stage,
+            stage | ShaderStages::FRAGMENT | ShaderStages::COMPUTE,
             (
                 storage_buffer_read_only_sized(false, None),
                 uniform_buffer::<MoonlyForwardParams>(false),
@@ -64,4 +65,17 @@ pub fn moonly_forward_layout_for(stage: ShaderStages) -> BindGroupLayoutDescript
             ),
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fragment_and_compute_layouts_match() {
+        assert_eq!(
+            moonly_forward_layout().entries,
+            moonly_forward_layout_for(ShaderStages::COMPUTE).entries
+        );
+    }
 }
