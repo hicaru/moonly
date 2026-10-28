@@ -29,6 +29,9 @@ pub const DEFAULT_GI_CLIP_METERS: f32 = 0.001;
 /// Default GI surface reflectivity factor (`ps_r2_gi_refl`).
 pub const DEFAULT_GI_REFLECTIVITY: f32 = 0.9;
 
+/// Default reflected-light energy threshold (`r2_gi_clip`).
+pub const DEFAULT_GI_ENERGY_CLIP: f32 = 1.0 / 255.0;
+
 /// Minimum virtual light energy threshold (`ps_r2_ls_dlights_clip`).
 pub const DEFAULT_DLIGHTS_CLIP: f32 = 0.015;
 
@@ -120,7 +123,7 @@ pub struct GiRadiosityConfig {
     pub clip_distance: f32,
     /// Surface bounce reflectivity multiplier (`ps_r2_gi_refl`).
     pub reflectivity: f32,
-    /// Minimum virtual light intensity threshold (`ps_r2_ls_dlights_clip`).
+    /// Minimum reflected-light energy threshold (`r2_gi_clip`, default `1/255`).
     pub energy_clip: f32,
     /// Normal offset in meters for spawned virtual bounce lights (`0.05` in R4).
     pub normal_standoff: f32,
@@ -136,7 +139,7 @@ impl Default for GiRadiosityConfig {
             num_photons: DEFAULT_GI_PHOTONS,
             clip_distance: DEFAULT_GI_CLIP_METERS,
             reflectivity: DEFAULT_GI_REFLECTIVITY,
-            energy_clip: DEFAULT_DLIGHTS_CLIP,
+            energy_clip: DEFAULT_GI_ENERGY_CLIP,
             normal_standoff: 0.05,
             enabled: true,
             cosine_weighted: false,
@@ -164,6 +167,10 @@ pub struct MoonlyConfig {
     pub specular_quality: f32,
     /// Rain wetness factor in `[0.0, 1.0]`.
     pub rain_wetness: f32,
+    /// Wet-surface shadow distances and resolution.
+    pub rain_wet_surface: crate::rain_config::RainWetSurfaceConfig,
+    /// Local volumetric quality, slice scheduling, and distance fade.
+    pub volumetrics: crate::volumetric_config::VolumetricQualityConfig,
     /// Enable software 64x64 hierarchical occlusion rasterizer (`occRasterizer`).
     pub enable_occ_rasterizer: bool,
     /// Enable shadow map caster occlusion pruning (`ps_r2_smapvis`).
@@ -189,6 +196,8 @@ impl Default for MoonlyConfig {
             gi: GiRadiosityConfig::default(),
             specular_quality: 1.0,
             rain_wetness: 0.0,
+            rain_wet_surface: crate::rain_config::RainWetSurfaceConfig::default(),
+            volumetrics: crate::volumetric_config::VolumetricQualityConfig::default(),
             enable_occ_rasterizer: true,
             enable_smapvis: true,
         }
@@ -208,6 +217,8 @@ impl MoonlyConfig {
             gi: GiRadiosityConfig::default(),
             specular_quality: 1.0,
             rain_wetness: 0.0,
+            rain_wet_surface: crate::rain_config::RainWetSurfaceConfig::default(),
+            volumetrics: crate::volumetric_config::VolumetricQualityConfig::default(),
             enable_occ_rasterizer: true,
             enable_smapvis: true,
         }
@@ -237,6 +248,7 @@ mod tests {
         let config = MoonlyConfig::moonly_r4();
         assert_eq!(config.tier, MoonlyPipelineTier::MonolithR4);
         assert_eq!(config.gi.num_photons, 16);
+        assert_eq!(config.gi.energy_clip, 1.0 / 255.0);
         assert!(!config.gi.cosine_weighted);
         assert_eq!(config.shadow_filter, ShadowFilterMode::MonolithJitter64);
     }

@@ -8,10 +8,12 @@ mod light_layers;
 pub mod lights;
 mod native_lights;
 pub mod projector;
+pub mod rain_config;
 pub mod shader_bus;
 pub mod shadow_package;
 pub mod spot_xform;
 pub mod sun_cascade_config;
+pub mod volumetric_config;
 mod weather_fog;
 
 use bevy::{
@@ -27,10 +29,11 @@ use bevy::{
 pub use crate::{
     config::{
         AmbientOcclusionMode, AmbientOcclusionSettings, DEFAULT_DLIGHTS_CLIP,
-        DEFAULT_GI_CLIP_METERS, DEFAULT_GI_PHOTONS, DEFAULT_GI_REFLECTIVITY,
-        DEFAULT_SMAP_POOL_SIZE, DEFAULT_SUN_DIAGONAL_OFFSET_METERS, DEFAULT_SUN_FAR_METERS,
-        DEFAULT_SUN_MIDDLE_METERS, DEFAULT_SUN_NEAR_METERS, GiRadiosityConfig, MoonlyConfig,
-        MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig, SunCascadeFootprint,
+        DEFAULT_GI_CLIP_METERS, DEFAULT_GI_ENERGY_CLIP, DEFAULT_GI_PHOTONS,
+        DEFAULT_GI_REFLECTIVITY, DEFAULT_SMAP_POOL_SIZE, DEFAULT_SUN_DIAGONAL_OFFSET_METERS,
+        DEFAULT_SUN_FAR_METERS, DEFAULT_SUN_MIDDLE_METERS, DEFAULT_SUN_NEAR_METERS,
+        GiRadiosityConfig, MoonlyConfig, MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig,
+        SunCascadeFootprint,
     },
     hemisphere::{
         HEMI_CUBE_DIRS, HEMI_FALL_SPEED, HEMI_RISE_SPEED, HEMI_SAMPLE_COUNT, HEMI_SAMPLE_DIRS,
@@ -43,6 +46,7 @@ pub use crate::{
     },
     native_lights::{MoonlyNativeAmbient, MoonlyNativeForward, MoonlyNativePost},
     projector::MoonlyProjector,
+    rain_config::RainWetSurfaceConfig,
     shader_bus::{SHADER_BUS_SLOT_COUNT, ShaderBus},
     shadow_package::{
         MoonlyShadowBatch, MoonlyShadowPackage, MoonlyShadowRect, MoonlyShadowView,
@@ -52,6 +56,7 @@ pub use crate::{
         MIN_SPOT_SMAP_SIZE, SpotShadowXform, TAN_SHIFT_OMNIPART, TAN_SHIFT_POINT, TAN_SHIFT_SPOT,
         look_to_rh_mat4, orthographic_rh_mat4, perspective_rh_mat4,
     },
+    volumetric_config::{VolumetricQualityConfig, VolumetricSchedule},
 };
 
 ///Raw WESL source for `core_common.wesl` (`common_functions.h`).
@@ -171,7 +176,7 @@ mod tests {
         };
         pkg.push(point);
         assert_eq!(pkg.v_shadowed.len(), 6);
-        assert!(pkg.v_point.is_empty());
+        assert_eq!(pkg.v_point.len(), 0);
         assert!(pkg.v_shadowed.iter().all(|light| {
             light.omnipart_parent == Some(source)
                 && light.omnipart_face.is_some_and(|face| face < 6)
@@ -189,7 +194,7 @@ mod tests {
         pkg.push(direct);
         assert_eq!(pkg.v_direct.len(), 1);
         assert_eq!(pkg.total_count(), 1);
-        assert!(pkg.v_shadowed.is_empty());
+        assert_eq!(pkg.v_shadowed.len(), 0);
     }
 
     #[test]
