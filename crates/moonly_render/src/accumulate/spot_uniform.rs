@@ -2,7 +2,9 @@ use bevy::{
     prelude::*,
     render::{render_resource::ShaderType, view::ExtractedView},
 };
-use moonly_core::{MoonlyLight, MoonlyLightFlags, MoonlyLightType};
+use moonly_core::{
+    MoonlyLight, MoonlyLightFlags, MoonlyLightType, attenuation::reference_attenuation_factor,
+};
 
 use crate::{light_volume::clip_from_local, shadow_targets::MoonlyShadowSample};
 
@@ -19,7 +21,7 @@ pub(crate) struct MoonlySpotUniform {
     shadow_transform: Vec4,
     world_from_clip: Mat4,
     volumetric: Vec4,
-    screen_size: Vec4,
+    screen_attenuation: Vec4,
 }
 
 impl MoonlySpotUniform {
@@ -93,7 +95,32 @@ impl MoonlySpotUniform {
                     -1.0
                 },
             ),
-            screen_size: lowres_size.extend(0.0).extend(0.0),
+            screen_attenuation: lowres_size
+                .extend(reference_attenuation_factor(light.range))
+                .extend(0.0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_and_live_lights_share_the_attenuation_factor() {
+        let point = MoonlyLight {
+            range: 10.0,
+            ..MoonlyLight::default()
+        };
+        let native_spot = MoonlyLight {
+            light_type: MoonlyLightType::Spot,
+            flags: MoonlyLightFlags::NATIVE,
+            range: point.range,
+            ..MoonlyLight::default()
+        };
+        let point_factor = reference_attenuation_factor(point.range);
+        let spot_factor = reference_attenuation_factor(native_spot.range);
+        assert!((point_factor - spot_factor).abs() < f32::EPSILON);
+        assert!((point_factor - 1.0 / 90.25).abs() < 1.0e-7);
     }
 }

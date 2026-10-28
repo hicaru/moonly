@@ -23,7 +23,7 @@ struct MoonlySpotUniform {
     shadow_transform: vec4<f32>,
     world_from_clip: mat4x4<f32>,
     volumetric: vec4<f32>,
-    screen_size: vec4<f32>,
+    screen_attenuation: vec4<f32>,
 };
 
 struct SpotVertexOutput {
@@ -37,16 +37,14 @@ fn vertex(@location(0) local_position: vec3<f32>) -> SpotVertexOutput {
     return out;
 }
 
-fn light_attenuation(distance_to_light: f32) -> f32 {
-    if spot.color.a < 0.5 {
-        let attenuation = clamp(1.0 - distance_to_light / spot.position_range.w, 0.0, 1.0);
-        return attenuation * attenuation;
-    }
-    let distance_squared = distance_to_light * distance_to_light;
-    let inverse_range_squared = 1.0 / max(spot.position_range.w * spot.position_range.w, 0.0001);
-    let factor = distance_squared * inverse_range_squared;
-    let smooth_factor = clamp(1.0 - factor * factor, 0.0, 1.0);
-    return smooth_factor * smooth_factor / max(distance_squared, 0.0001);
+fn light_attenuation(light_to_fragment: vec3<f32>) -> f32 {
+    let distance_squared = dot(light_to_fragment, light_to_fragment);
+    let linear = clamp(
+        1.0 - distance_squared * spot.screen_attenuation.z,
+        0.0,
+        1.0,
+    );
+    return linear * linear;
 }
 
 @fragment
@@ -108,7 +106,7 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
         );
     }
     let projection = projector_color(position.xyz);
-    let radiance = spot.color.rgb * projection * (cone * light_attenuation(distance_to_light));
+    let radiance = spot.color.rgb * projection * (cone * light_attenuation(to_light));
     let visibility = shadow_visibility(position.xyz, in.position.xy);
     return vec4(radiance * surface * visibility, 1.0);
 }
@@ -181,7 +179,7 @@ fn local_scattering(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32
     );
     let visibility = shadow_visibility(world_position, screen_xy);
     return spot.color.rgb * projector_color(world_position)
-        * cone * light_attenuation(distance) * visibility;
+        * cone * light_attenuation(to_light) * visibility;
 }
 
 @fragment
@@ -189,7 +187,7 @@ fn volumetric_fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     if spot.volumetric.x <= 0.0 {
         return vec4(0.0);
     }
-    let uv = in.position.xy / spot.screen_size.xy;
+    let uv = in.position.xy / spot.screen_attenuation.xy;
     let dimensions = vec2<f32>(textureDimensions(position_texture));
     let position = textureLoad(position_texture, vec2<i32>(uv * dimensions), 0);
     let far = spot.world_from_clip * vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 1.0, 1.0);

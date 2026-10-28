@@ -34,7 +34,7 @@ impl MoonlyLightFlags {
     pub const GI_ENABLED: Self = Self(1 << 3);
     /// Light is a virtual indirect bounce source (`bVirtualGI`).
     pub const VIRTUAL_GI: Self = Self(1 << 4);
-    /// Light uses native Bevy intensity, attenuation, and BRDF semantics.
+    /// Light uses native Bevy intensity and BRDF semantics with R4 attenuation.
     pub const NATIVE: Self = Self(1 << 5);
 
     /// Check whether all bits in `other` are present.

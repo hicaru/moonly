@@ -1,5 +1,6 @@
 //! Core configuration, light packages, hemisphere tracking, and shader bus for Moonly.
 
+pub mod attenuation;
 pub mod config;
 pub mod hemisphere;
 mod light_collection;

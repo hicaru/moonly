@@ -27,7 +27,7 @@ struct MoonlySpotUniform {
     shadow_transform: vec4<f32>,
     world_from_clip: mat4x4<f32>,
     volumetric: vec4<f32>,
-    screen_size: vec4<f32>,
+    screen_attenuation: vec4<f32>,
 };
 
 struct MoonlyNativeLocalParams {
@@ -55,12 +55,10 @@ fn fullscreen_vertex_shader(@builtin(vertex_index) index: u32) -> FullscreenVert
     return out;
 }
 
-fn attenuation(range: f32, distance: f32) -> f32 {
-    let distance_squared = distance * distance;
-    let inverse_range_squared = 1.0 / max(range * range, 0.0001);
-    let factor = distance_squared * inverse_range_squared;
-    let smooth_factor = clamp(1.0 - factor * factor, 0.0, 1.0);
-    return smooth_factor * smooth_factor / max(distance_squared, 0.0001);
+fn attenuation(attenuation_factor: f32, light_to_fragment: vec3<f32>) -> f32 {
+    let distance_squared = dot(light_to_fragment, light_to_fragment);
+    let linear = clamp(1.0 - distance_squared * attenuation_factor, 0.0, 1.0);
+    return linear * linear;
 }
 
 fn cone_factor(direction_cos: vec4<f32>, inner_cos: f32, direction: vec3<f32>) -> f32 {
@@ -134,7 +132,7 @@ fn contribution(index: u32, surface: MoonlyNativeSurface, screen_xy: vec2<f32>) 
         1.0 - surface.albedo_gloss.a,
     );
     let radiance = lights[index].color.rgb * projector_color(index, surface.position.xyz)
-        * cone * attenuation(position_range.w, distance);
+        * cone * attenuation(lights[index].screen_attenuation.z, to_light);
     return radiance * brdf * shadow_visibility(index, surface.position.xyz, screen_xy);
 }
 
