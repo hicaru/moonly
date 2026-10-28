@@ -38,6 +38,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return vec4(0.0);
     }
     let normal_sample = textureLoad(normal_texture, pixel, 0);
+    if normal_sample.w < 0.0 {
+        return vec4(0.0);
+    }
     let normal = normalize(normal_sample.xyz);
     let light_direction = normalize(-sun.direction_bias.xyz);
     let view_direction = normalize(sun.view_position.xyz - position.xyz);

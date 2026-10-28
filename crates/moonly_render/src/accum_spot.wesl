@@ -87,6 +87,9 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     }
 
     let normal_sample = textureLoad(normal_texture, pixel, 0);
+    if normal_sample.w < 0.0 {
+        return vec4(0.0);
+    }
     let normal = normalize(normal_sample.xyz);
     let albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     let view_direction = normalize(spot.view_position.xyz - position.xyz);

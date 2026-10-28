@@ -112,7 +112,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return vec4(0.0, 0.0, 0.0, 1.0);
     }
 
-    let normal = normalize(textureLoad(normal_texture, pixel, 0).xyz);
+    let normal_sample = textureLoad(normal_texture, pixel, 0);
+    let normal = normalize(normal_sample.xyz);
+    let unlit = normal_sample.w < 0.0;
     if constants::MOONLY_DEBUG_VIEW == 2u {
         return vec4(normal * 0.5 + vec3(0.5), 1.0);
     }
@@ -127,7 +129,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let global_light = albedo_gloss.rgb * ambient * ao + accumulated;
     let tracked_light = accumulated * ao;
     let tracked_only = accumulator.w > 1.5 && environment.fog_params.w < 0.5;
-    let direct_color = select(global_light, tracked_light, tracked_only)
+    let direct_color = select(select(global_light, tracked_light, tracked_only), accumulator.rgb, unlit)
         + textureLoad(volumetric_texture, pixel, 0).rgb
         + local_volume(in.uv, position.xyz);
     let exposure = select(1.0, environment.ambient.a, environment.fog_params.w > 0.5);
