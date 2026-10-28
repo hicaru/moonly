@@ -218,6 +218,7 @@ fn fill_native_uniforms(
             context.view,
             sample.as_ref(),
             projector.is_some(),
+            &context.inputs.config.volumetrics,
         ));
     }
 }

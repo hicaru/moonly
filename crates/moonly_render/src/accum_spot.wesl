@@ -24,6 +24,7 @@ struct MoonlySpotUniform {
     world_from_clip: mat4x4<f32>,
     volumetric: vec4<f32>,
     screen_attenuation: vec4<f32>,
+    volumetric_schedule: vec4<f32>,
 };
 
 struct SpotVertexOutput {
@@ -164,6 +165,17 @@ fn projector_color(world_position: vec3<f32>) -> vec3<f32> {
     return textureSampleLevel(projector_texture, projector_sampler, uv, 0.0).rgb;
 }
 
+fn volumetric_attenuation(light_to_fragment: vec3<f32>) -> f32 {
+    let distance_squared = dot(light_to_fragment, light_to_fragment);
+    let distance_scale = max(spot.volumetric.y * spot.volumetric.y, 0.0001);
+    let linear = clamp(
+        1.0 - distance_squared * spot.screen_attenuation.z / distance_scale,
+        0.0,
+        1.0,
+    );
+    return linear * linear;
+}
+
 fn local_scattering(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32> {
     let to_light = spot.position_range.xyz - world_position;
     let distance = length(to_light);
@@ -179,7 +191,7 @@ fn local_scattering(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32
     );
     let visibility = shadow_visibility(world_position, screen_xy);
     return spot.color.rgb * projector_color(world_position)
-        * cone * light_attenuation(to_light) * visibility;
+        * cone * volumetric_attenuation(to_light) * visibility;
 }
 
 @fragment
@@ -196,18 +208,20 @@ fn volumetric_fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
         end_position = position.xyz;
     }
     let ray = end_position - spot.view_position.xyz;
-    let ray_length = min(length(ray), 80.0);
-    if ray_length < 0.001 {
+    let ray_length = length(ray);
+    let max_march = spot.volumetric_schedule.x * spot.volumetric_schedule.z;
+    let march_length = min(ray_length, max_march) * spot.volumetric.y;
+    if march_length < 0.001 {
         return vec4(0.0);
     }
-    let direction = ray / max(length(ray), 0.001);
-    let steps = i32(clamp(spot.volumetric.z * 32.0, 8.0, 32.0));
-    let step_length = ray_length * spot.volumetric.y / f32(steps);
+    let direction = ray / max(ray_length, 0.001);
+    let steps = i32(spot.volumetric_schedule.z);
+    let step_length = march_length * spot.volumetric_schedule.y;
     var scattering = vec3(0.0);
     for (var index = 0; index < steps; index += 1) {
         let distance = (f32(index) + 0.5) * step_length;
         let point = spot.view_position.xyz + direction * distance;
         scattering += local_scattering(point, in.position.xy) * step_length;
     }
-    return vec4(scattering * spot.volumetric.x * 0.005, 1.0);
+    return vec4(scattering * spot.volumetric.x, 1.0);
 }

@@ -3,7 +3,8 @@ use bevy::{
     render::{render_resource::ShaderType, view::ExtractedView},
 };
 use moonly_core::{
-    MoonlyLight, MoonlyLightFlags, MoonlyLightType, attenuation::reference_attenuation_factor,
+    MoonlyLight, MoonlyLightFlags, MoonlyLightType, VolumetricQualityConfig,
+    attenuation::reference_attenuation_factor,
 };
 
 use crate::{light_volume::clip_from_local, shadow_targets::MoonlyShadowSample};
@@ -22,6 +23,7 @@ pub(crate) struct MoonlySpotUniform {
     world_from_clip: Mat4,
     volumetric: Vec4,
     screen_attenuation: Vec4,
+    volumetric_schedule: Vec4,
 }
 
 impl MoonlySpotUniform {
@@ -30,8 +32,10 @@ impl MoonlySpotUniform {
         view: &ExtractedView,
         shadow: Option<&MoonlyShadowSample>,
         has_projector: bool,
+        config: &VolumetricQualityConfig,
     ) -> Self {
         let camera_position = view.world_from_view.translation();
+        let (volumetric, volumetric_schedule) = volumetric_data(light, camera_position, config);
         let atlas_size = shadow.map_or(2048, |shadow| shadow.atlas_size);
         let rect = shadow.map_or(
             moonly_core::MoonlyShadowRect {
@@ -85,21 +89,49 @@ impl MoonlySpotUniform {
                 0.0,
             ),
             world_from_clip: clip_from_world.inverse(),
-            volumetric: Vec4::new(
-                light.volumetric.intensity,
-                light.volumetric.distance,
-                light.volumetric.quality,
-                if light.inner_cone_angle >= 0.0 {
-                    (light.inner_cone_angle * 0.5).cos()
-                } else {
-                    -1.0
-                },
-            ),
+            volumetric,
             screen_attenuation: lowres_size
                 .extend(reference_attenuation_factor(light.range))
                 .extend(0.0),
+            volumetric_schedule,
         }
     }
+
+    pub(crate) fn has_volumetric_contribution(&self) -> bool {
+        self.volumetric.x > 0.0
+    }
+}
+
+fn volumetric_data(
+    light: &MoonlyLight,
+    camera_position: Vec3,
+    config: &VolumetricQualityConfig,
+) -> (Vec4, Vec4) {
+    let schedule = config.schedule(
+        light.volumetric.quality,
+        camera_position.distance(light.position),
+        light.range,
+    );
+    let intensity =
+        light.volumetric.intensity.max(0.0) * schedule.distance_fade * config.density_scale();
+    let inner_cone = if light.inner_cone_angle >= 0.0 {
+        (light.inner_cone_angle * 0.5).cos()
+    } else {
+        -1.0
+    };
+    let settings = Vec4::new(
+        intensity,
+        light.volumetric.distance,
+        light.volumetric.quality,
+        inner_cone,
+    );
+    let schedule = Vec4::new(
+        schedule.min_step,
+        schedule.intensity_normalization,
+        schedule.slice_count as f32,
+        0.0,
+    );
+    (settings, schedule)
 }
 
 #[cfg(test)]

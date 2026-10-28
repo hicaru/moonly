@@ -52,6 +52,7 @@ pub(crate) struct SpotPrepareInputs<'w> {
     pub(crate) fallback: Res<'w, MoonlyFallbackProjector>,
     pub(crate) lut: Res<'w, crate::material_lut::MoonlyMaterialLutTexture>,
     pub(crate) jitter: Res<'w, crate::jitter::MoonlyJitterTexture>,
+    pub(crate) config: Res<'w, moonly_core::MoonlyConfig>,
 }
 
 pub(crate) struct SpotViewContext<'a, 'w> {
@@ -180,12 +181,16 @@ fn create_spot_bind_group_with_key(
         .or_else(|| context.shadow.first_depth())?;
     let projector_view = projector.map_or(&inputs.fallback.view, |image| &image.texture_view);
     let projector_sampler = projector.map_or(&inputs.fallback.sampler, |image| &image.sampler);
-    let mut uniform = UniformBuffer::from(MoonlySpotUniform::new(
+    let uniform_data = MoonlySpotUniform::new(
         light,
         context.view,
         sample.as_ref(),
         projector.is_some(),
-    ));
+        &inputs.config.volumetrics,
+    );
+    let volumetric = light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
+        && uniform_data.has_volumetric_contribution();
+    let mut uniform = UniformBuffer::from(uniform_data);
     uniform.write_buffer(&inputs.device, &inputs.queue);
     let bind_group = inputs.device.create_bind_group(
         Some("moonly_spot_bind_group"),
@@ -215,8 +220,7 @@ fn create_spot_bind_group_with_key(
     Some(MoonlySpotBindGroup {
         bind_group,
         kind,
-        volumetric: light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
-            && light.volumetric.intensity > 0.0,
+        volumetric,
         key,
     })
 }

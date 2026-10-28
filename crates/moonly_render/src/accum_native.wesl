@@ -28,6 +28,7 @@ struct MoonlySpotUniform {
     world_from_clip: mat4x4<f32>,
     volumetric: vec4<f32>,
     screen_attenuation: vec4<f32>,
+    volumetric_schedule: vec4<f32>,
 };
 
 struct MoonlyNativeLocalParams {
@@ -70,13 +71,13 @@ fn cone_factor(direction_cos: vec4<f32>, inner_cos: f32, direction: vec3<f32>) -
     return select(select(reference, native_cone, inner_cos >= 0.0), 1.0, direction_cos.w < -0.999);
 }
 
-fn projector_color(index: u32, world_position: vec3<f32>) -> vec3<f32> {
+fn projector_color(index: u32, world_position: vec3<f32>) -> f32 {
     if lights[index].shadow_settings.w < 0.5 {
-        return vec3(1.0);
+        return 1.0;
     }
     let clip = lights[index].projector_from_world * vec4(world_position, 1.0);
     if clip.w <= 0.0 {
-        return vec3(0.0);
+        return 0.0;
     }
     let ndc = clip.xy / clip.w;
     let uv = ndc * vec2(0.5, -0.5) + vec2(0.5);
@@ -86,14 +87,14 @@ fn projector_color(index: u32, world_position: vec3<f32>) -> vec3<f32> {
     return textureSampleLevel(projector_texture, projector_sampler, uv, 0.0).rgb;
 }
 
-fn shadow_visibility(index: u32, world_position: vec3<f32>, screen_xy: vec2<f32>) -> f32 {
+fn shadow_visibility(index: u32, world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32> {
     let settings = lights[index].shadow_settings;
     if settings.x < 0.5 {
-        return 1.0;
+        return vec3(1.0);
     }
     let clip = lights[index].shadow_from_world * vec4(world_position, 1.0);
     if clip.w <= 0.0 {
-        return 0.0;
+        return vec3(0.0);
     }
     let ndc = clip.xyz / clip.w;
     let local_uv = ndc.xy * vec2(0.5, -0.5) + vec2(0.5);
