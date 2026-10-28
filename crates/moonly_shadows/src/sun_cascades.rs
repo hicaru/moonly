@@ -201,12 +201,11 @@ fn compute_single_cascade(
     } else {
         0.0
     };
-    let bounds_center = (min_ls + max_ls) * 0.5;
     let half_size = footprint_size * 0.5 + padding;
-    min_ls.x = bounds_center.x - half_size;
-    max_ls.x = bounds_center.x + half_size;
-    min_ls.y = bounds_center.y - half_size;
-    max_ls.y = bounds_center.y + half_size;
+    min_ls.x = -half_size;
+    max_ls.x = half_size;
+    min_ls.y = -half_size;
+    max_ls.y = half_size;
     min_ls.z -= cfg.diagonal_offset;
     let proj = orthographic_rh_mat4(
         (min_ls.x, max_ls.x, min_ls.y, max_ls.y),

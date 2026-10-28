@@ -36,7 +36,7 @@ fn previous_spatial_cascade_starts_with_the_near_matrix() {
 }
 
 #[test]
-fn sub_texel_camera_translation_preserves_snapped_matrices() {
+fn sub_texel_translation_inside_a_grid_cell_preserves_snapped_matrices() {
     for footprint in [
         SunCascadeFootprint::FrustumFit,
         SunCascadeFootprint::ReferenceFixed,
@@ -47,7 +47,10 @@ fn sub_texel_camera_translation_preserves_snapped_matrices() {
         };
         let mut first = SunCascades::default();
         let mut second = SunCascades::default();
-        let camera = CameraFrustumParams::default();
+        let camera = CameraFrustumParams {
+            camera_transform: Transform::from_xyz(0.003, 2.0, 8.0),
+            ..CameraFrustumParams::default()
+        };
         let moved = CameraFrustumParams {
             camera_transform: Transform::from_translation(
                 camera.camera_transform.translation + Vec3::new(0.0001, 0.0, 0.0),
@@ -56,8 +59,18 @@ fn sub_texel_camera_translation_preserves_snapped_matrices() {
         };
         first.compute(&camera, Vec3::NEG_Y, &config, 2048);
         second.compute(&moved, Vec3::NEG_Y, &config, 2048);
-        for (first, second) in first.cascades.iter().zip(second.cascades.iter()) {
-            assert!(first.combine.abs_diff_eq(second.combine, 1.0e-6));
+        for (index, (first, second)) in first
+            .cascades
+            .iter()
+            .zip(second.cascades.iter())
+            .enumerate()
+        {
+            assert!(
+                first.combine.abs_diff_eq(second.combine, 1.0e-6),
+                "{footprint:?} cascade {index}: {:?} != {:?}",
+                first.combine,
+                second.combine
+            );
         }
     }
 }
