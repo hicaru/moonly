@@ -143,13 +143,12 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dimensions = vec2<f32>(textureDimensions(position_texture));
     let pixel = vec2<i32>(in.uv * dimensions);
     let position = textureLoad(position_texture, pixel, 0);
-    if position.w < 0.5 || position.w >= 3.0 {
+    if position.w < 0.5 {
         return vec4(0.0);
     }
-    let normal_sample = textureLoad(normal_texture, pixel, 0);
     var surface: MoonlyNativeSurface;
     surface.position = position;
-    surface.normal = normalize(normal_sample.xyz);
+    surface.normal = normalize(textureLoad(normal_texture, pixel, 0).xyz);
     surface.albedo_gloss = textureLoad(albedo_gloss_texture, pixel, 0);
     surface.view_direction = normalize(lights[0].view_position.xyz - position.xyz);
     let tile_xy = vec2<u32>(in.position.xy / 64.0);

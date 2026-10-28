@@ -58,7 +58,7 @@ fn mask_fragment() -> @location(0) vec4<f32> {
 fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(in.position.xy);
     let position = textureLoad(position_texture, pixel, 0);
-    if position.w < 0.5 || position.w >= 3.0 {
+    if position.w < 0.5 {
         return vec4(0.0);
     }
     let to_light = spot.position_range.xyz - position.xyz;

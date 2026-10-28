@@ -38,19 +38,11 @@ fn moonly_gbuffer_output(world_position: vec3<f32>, pbr_input: PbrInput) -> Moon
     let albedo = pbr_input.material.base_color.rgb * mix(1.0, 0.58, wetness);
     let roughness = mix(pbr_input.material.perceptual_roughness, 0.08, wetness);
     var out: MoonlyGbufferOutput;
-    let unlit = (pbr_input.material.flags
-        & bevy_pbr::render::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) != 0u;
-    out.position = vec4(
-        world_position,
-        select(1.0 + pbr_input.material.metallic, 3.0 + pbr_input.material.metallic, unlit),
-    );
+    out.position = vec4(world_position, 1.0 + pbr_input.material.metallic);
     out.normal = vec4(normal, surface.values.x);
     out.albedo_gloss = vec4(albedo, 1.0 - roughness);
     let indirect = tracked_irradiance(normal) * albedo * surface.local.a;
-    out.accumulator = vec4(
-        pbr_input.material.emissive.rgb + select(indirect, albedo, unlit),
-        1.0 + surface.local.a,
-    );
-    out.emissive = select(pbr_input.material.emissive, vec4<f32>(0.0), unlit);
+    out.accumulator = vec4(pbr_input.material.emissive.rgb + indirect, 1.0 + surface.local.a);
+    out.emissive = pbr_input.material.emissive;
     return out;
 }
