@@ -10,15 +10,14 @@ use bevy::{
             BlendComponent, BlendFactor, BlendOperation, BlendState, CachedRenderPipelineId,
             ColorTargetState, ColorWrites, CompareFunction, FilterMode, FragmentState,
             PipelineCache, RenderPassDescriptor, RenderPipelineDescriptor, Sampler,
-            SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, TextureSampleType,
-            UniformBuffer,
+            SamplerBindingType, SamplerDescriptor, ShaderStages, TextureSampleType, UniformBuffer,
             binding_types::{sampler, texture_2d, texture_2d_array, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::ExtractedView,
     },
 };
-use moonly_core::{LightPackage, MoonlyLight, MoonlySunCascade};
+use moonly_core::LightPackage;
 
 use crate::{
     camera::MoonlyCamera,
@@ -27,74 +26,8 @@ use crate::{
     view_targets::{GBUFFER_FORMAT, MoonlyViewTargets},
 };
 
-#[derive(ShaderType, Default)]
-pub(crate) struct MoonlySunUniform {
-    view_position: Vec4,
-    view_forward: Vec4,
-    direction_bias: Vec4,
-    color: Vec4,
-    splits_near: Vec4,
-    splits_far: Vec4,
-    shadow_near_from_world: Mat4,
-    shadow_middle_from_world: Mat4,
-    shadow_far_from_world: Mat4,
-}
-
-impl MoonlySunUniform {
-    pub(crate) fn new(
-        light: &MoonlyLight,
-        view: &ExtractedView,
-        cascades: &[MoonlySunCascade],
-        target: &MoonlySpotShadowTarget,
-        depth_bias: f32,
-    ) -> Self {
-        let split = |index: usize| cascades.get(index).map_or(0.0, |cascade| cascade.split_far);
-        let shadow_texel = target
-            .sun_batches
-            .first()
-            .and_then(|batch| batch.views.first())
-            .map_or(0.0, |view| 1.0 / view.rect.size as f32);
-        Self {
-            view_position: view.world_from_view.translation().extend(shadow_texel),
-            view_forward: view.world_from_view.forward().as_vec3().extend(0.0),
-            direction_bias: light.direction.extend(depth_bias),
-            color: light.color.extend(
-                if light.flags.contains(moonly_core::MoonlyLightFlags::NATIVE) {
-                    1.0
-                } else {
-                    0.0
-                },
-            ),
-            splits_near: Vec4::new(
-                cascades.first().map_or(0.0, |cascade| cascade.split_near),
-                split(0),
-                split(1),
-                split(2),
-            ),
-            splits_far: Vec4::new(
-                split(0),
-                split(1),
-                split(2),
-                if target.near_minmax.is_some() {
-                    1.0
-                } else {
-                    0.0
-                },
-            ),
-            shadow_near_from_world: cascade_matrix(target, 0),
-            shadow_middle_from_world: cascade_matrix(target, 1),
-            shadow_far_from_world: cascade_matrix(target, 2),
-        }
-    }
-}
-
-fn cascade_matrix(target: &MoonlySpotShadowTarget, index: usize) -> Mat4 {
-    target
-        .sun_batches
-        .get(index)
-        .and_then(|batch| batch.views.first())
-        .map_or(Mat4::IDENTITY, |view| view.xform.combine)
-}
+pub(crate) mod sun_uniform;
+pub(crate) use self::sun_uniform::MoonlySunUniform;
 
 #[derive(Resource)]
 pub(crate) struct MoonlySunPipeline {
@@ -236,7 +169,6 @@ fn create_sun_bind_group(
         view,
         &inputs.cascades.cascades,
         shadow,
-        inputs.cascades.depth_bias,
     ));
     uniform.write_buffer(&inputs.device, &inputs.queue);
     Some(

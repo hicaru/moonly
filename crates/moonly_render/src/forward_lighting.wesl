@@ -33,9 +33,14 @@ struct MoonlySunUniform {
     color: vec4<f32>,
     splits_near: vec4<f32>,
     splits_far: vec4<f32>,
+    cascade_biases: vec4<f32>,
+    blend_bands: vec4<f32>,
     shadow_near_from_world: mat4x4<f32>,
     shadow_middle_from_world: mat4x4<f32>,
     shadow_far_from_world: mat4x4<f32>,
+    previous_near_from_world: mat4x4<f32>,
+    previous_middle_from_world: mat4x4<f32>,
+    previous_far_from_world: mat4x4<f32>,
 };
 
 fn forward_attenuation(light: MoonlyForwardLight, distance_to_light: f32) -> f32 {

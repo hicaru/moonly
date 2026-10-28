@@ -1,5 +1,6 @@
 //! Shadow map Guillotine allocator, sun cascades, spot shadow matrices, and rain shadows.
 
+mod cascade_planes;
 pub mod local_batches;
 pub mod rain_shadow;
 pub mod shadow_update;

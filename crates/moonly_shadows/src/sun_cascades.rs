@@ -1,9 +1,9 @@
 //! Cascaded sun shadow frustum and matrix calculation ported from `r2_R_sun.cpp`.
 
 use bevy::prelude::*;
-use moonly_core::SunCascadeConfig;
+use moonly_core::{SunCascadeConfig, SunCascadeFootprint};
 
-use crate::spot_xform::orthographic_rh_mat4;
+use crate::{cascade_planes::extract_frustum_planes, spot_xform::orthographic_rh_mat4};
 
 /// Number of sun shadow cascades in `moonly-monolith` (`SE_SUN_NEAR`, `SE_SUN_MIDDLE`, `SE_SUN_FAR`).
 pub const SUN_CASCADE_COUNT: usize = 3;
@@ -54,6 +54,12 @@ pub struct SunCascadeSlice {
     pub split_near: f32,
     /// Far slice distance in meters.
     pub split_far: f32,
+    /// Depth bias derived from the active footprint policy.
+    pub depth_bias: f32,
+    /// Width of the visibility transition at the near split.
+    pub blend_band: f32,
+    /// Actual light-space width after the coverage fallback.
+    pub footprint_size: f32,
 }
 
 impl Default for SunCascadeSlice {
@@ -65,6 +71,9 @@ impl Default for SunCascadeSlice {
             cull_planes: [Vec4::ZERO; 6],
             split_near: 0.1,
             split_far: 20.0,
+            depth_bias: 0.0,
+            blend_band: 0.0,
+            footprint_size: 20.0,
         }
     }
 }
@@ -159,7 +168,7 @@ impl SunCascades {
         ];
         for (idx, &(near_d, far_d)) in splits.iter().enumerate() {
             if let Some(slice) = self.cascades.get_mut(idx) {
-                *slice = compute_single_cascade(&basis, (near_d, far_d), cfg, smap_resolution);
+                *slice = compute_single_cascade(&basis, (near_d, far_d), cfg, idx, smap_resolution);
             }
         }
     }
@@ -169,46 +178,77 @@ fn compute_single_cascade(
     basis: &CascadeCameraBasis,
     range: (f32, f32),
     cfg: &SunCascadeConfig,
+    index: usize,
     smap_resolution: u32,
 ) -> SunCascadeSlice {
     let (split_near, split_far) = range;
     let corners = frustum_slice_corners(basis, split_near, split_far);
-    let mut center = Vec3::ZERO;
-    for c in &corners {
-        center += *c;
+    let mut center = corners.iter().copied().sum::<Vec3>() * 0.125;
+    let initial_view = basis.view_matrix(center - basis.sun_f * cfg.diagonal_offset);
+    let (mut min_ls, mut max_ls) = light_space_aabb(&corners, initial_view);
+    let fitted_size = (max_ls - min_ls).truncate().max_element().max(1.0);
+    let footprint_size = match cfg.footprint {
+        SunCascadeFootprint::FrustumFit => fitted_size,
+        SunCascadeFootprint::ReferenceFixed => fitted_size.max(cfg.ortho_size(index)),
+    };
+    let world_per_texel = footprint_size / smap_resolution.max(1) as f32;
+    if cfg.stabilize_texels {
+        center = snap_center(center, basis, world_per_texel);
     }
-    center *= 0.125;
-
-    let eye = center - basis.sun_f * cfg.diagonal_offset;
-    let view = basis.view_matrix(eye);
-
-    let (mut min_ls, mut max_ls) = light_space_aabb(&corners, view);
+    let view = basis.view_matrix(center - basis.sun_f * cfg.diagonal_offset);
+    let padding = if cfg.stabilize_texels {
+        world_per_texel
+    } else {
+        0.0
+    };
+    let bounds_center = (min_ls + max_ls) * 0.5;
+    let half_size = footprint_size * 0.5 + padding;
+    min_ls.x = bounds_center.x - half_size;
+    max_ls.x = bounds_center.x + half_size;
+    min_ls.y = bounds_center.y - half_size;
+    max_ls.y = bounds_center.y + half_size;
     min_ls.z -= cfg.diagonal_offset;
-
-    if cfg.stabilize_texels && smap_resolution > 0 {
-        let span = (max_ls - min_ls).truncate().max_element().max(1.0);
-        let world_per_texel = span / (smap_resolution as f32);
-        min_ls.x = (min_ls.x / world_per_texel).floor() * world_per_texel;
-        min_ls.y = (min_ls.y / world_per_texel).floor() * world_per_texel;
-        max_ls.x = min_ls.x + span;
-        max_ls.y = min_ls.y + span;
-    }
-
     let proj = orthographic_rh_mat4(
         (min_ls.x, max_ls.x, min_ls.y, max_ls.y),
         (-max_ls.z, -min_ls.z),
     );
     let combine = proj * view;
-    let cull_planes = extract_frustum_planes(combine);
-
     SunCascadeSlice {
         view,
         proj,
         combine,
-        cull_planes,
+        cull_planes: extract_frustum_planes(combine),
         split_near,
         split_far,
+        depth_bias: cfg.cascade_depth_bias(footprint_size),
+        blend_band: cfg.blend_band(split_far),
+        footprint_size,
     }
+}
+
+fn snap_center(center: Vec3, basis: &CascadeCameraBasis, texel: f32) -> Vec3 {
+    let x = (center.dot(basis.sun_s) / texel).floor() * texel;
+    let y = (center.dot(basis.sun_u) / texel).floor() * texel;
+    basis.sun_s * x + basis.sun_u * y + basis.sun_f * center.dot(basis.sun_f)
+}
+
+pub(crate) fn previous_cascade_combine(
+    cascades: &[SunCascadeSlice; SUN_CASCADE_COUNT],
+    index: usize,
+) -> Mat4 {
+    cascades
+        .get(index.saturating_sub(1))
+        .or_else(|| cascades.first())
+        .map_or(Mat4::IDENTITY, |cascade| cascade.combine)
+}
+
+/// Return the current cascade weight across its near-split transition.
+#[must_use]
+pub fn cascade_blend_weight(view_depth: f32, split_near: f32, blend_band: f32) -> f32 {
+    if !view_depth.is_finite() || !split_near.is_finite() || blend_band <= 0.0 {
+        return f32::from(view_depth >= split_near);
+    }
+    ((view_depth - split_near) / blend_band).clamp(0.0, 1.0)
 }
 
 fn frustum_slice_corners(basis: &CascadeCameraBasis, near_d: f32, far_d: f32) -> [Vec3; 8] {
@@ -222,7 +262,6 @@ fn frustum_slice_corners(basis: &CascadeCameraBasis, near_d: f32, far_d: f32) ->
     let u_nh = basis.up * nh;
     let r_fw = basis.right * fw;
     let u_fh = basis.up * fh;
-
     [
         near_c - r_nw - u_nh,
         near_c + r_nw - u_nh,
@@ -238,51 +277,13 @@ fn frustum_slice_corners(basis: &CascadeCameraBasis, near_d: f32, far_d: f32) ->
 fn light_space_aabb(corners: &[Vec3; 8], view: Mat4) -> (Vec3, Vec3) {
     let mut min_v = Vec3::splat(f32::MAX);
     let mut max_v = Vec3::splat(f32::MIN);
-    for &c in corners {
-        let ls = view.transform_point3(c);
-        min_v = min_v.min(ls);
-        max_v = max_v.max(ls);
+    for &corner in corners {
+        let point = view.transform_point3(corner);
+        min_v = min_v.min(point);
+        max_v = max_v.max(point);
     }
     (min_v, max_v)
 }
 
-fn extract_frustum_planes(m: Mat4) -> [Vec4; 6] {
-    let r0 = m.row(0);
-    let r1 = m.row(1);
-    let r2 = m.row(2);
-    let r3 = m.row(3);
-    [
-        normalize_plane(r3 + r0),
-        normalize_plane(r3 - r0),
-        normalize_plane(r3 + r1),
-        normalize_plane(r3 - r1),
-        normalize_plane(r2),
-        normalize_plane(r3 - r2),
-    ]
-}
-
-fn normalize_plane(p: Vec4) -> Vec4 {
-    let len = p.truncate().length();
-    if len > 1.0e-6 { p / len } else { p }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::spot_xform::perspective_rh_mat4;
-
-    #[test]
-    fn cull_near_plane_uses_zero_to_one_clip_depth() {
-        let projection = perspective_rh_mat4(1.0, 1.5, 0.1, 100.0);
-        let planes = extract_frustum_planes(projection);
-        let Some(near) = planes.get(4) else {
-            return;
-        };
-        let before_near = Vec3::new(0.0, 0.0, -0.05).extend(1.0);
-        let at_near = Vec3::new(0.0, 0.0, -0.1).extend(1.0);
-        let inside = Vec3::new(0.0, 0.0, -1.0).extend(1.0);
-        assert!(near.dot(before_near) < 0.0);
-        assert!(near.dot(at_near).abs() < 1.0e-5);
-        assert!(near.dot(inside) > 0.0);
-    }
-}
+mod tests;

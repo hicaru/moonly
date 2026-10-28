@@ -109,38 +109,7 @@ impl ExtractResource<RenderApp> for AmbientOcclusionSettings {
     }
 }
 
-/// Sun cascade configuration matching `r2_R_sun.cpp`.
-#[derive(Debug, Clone, Copy, PartialEq, Reflect)]
-pub struct SunCascadeConfig {
-    /// Near cascade split distance in meters (`SE_SUN_NEAR`).
-    pub near_split: f32,
-    /// Middle cascade split distance in meters (`SE_SUN_MIDDLE`).
-    pub middle_split: f32,
-    /// Far cascade split distance in meters (`SE_SUN_FAR`).
-    pub far_split: f32,
-    /// Sun extrusion offset along the light direction (`c_sun_long_diagonal_offset`).
-    pub diagonal_offset: f32,
-    /// Shadow depth bias scale (`ps_r2_sun_depth_near_bias`).
-    pub depth_bias: f32,
-    /// Snap cascade projection to texel grid to prevent shimmer.
-    pub stabilize_texels: bool,
-    /// Enable 4x4 MinMax shadow pyramid for the near cascade.
-    pub use_minmax_near: bool,
-}
-
-impl Default for SunCascadeConfig {
-    fn default() -> Self {
-        Self {
-            near_split: DEFAULT_SUN_NEAR_METERS,
-            middle_split: DEFAULT_SUN_MIDDLE_METERS,
-            far_split: DEFAULT_SUN_FAR_METERS,
-            diagonal_offset: DEFAULT_SUN_DIAGONAL_OFFSET_METERS,
-            depth_bias: -0.00005,
-            stabilize_texels: true,
-            use_minmax_near: true,
-        }
-    }
-}
+pub use crate::sun_cascade_config::{SunCascadeConfig, SunCascadeFootprint};
 
 /// Real-time GI radiosity configuration matching `light_GI.cpp`.
 #[derive(Debug, Clone, Copy, PartialEq, Reflect)]

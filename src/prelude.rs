@@ -5,7 +5,8 @@ pub use moonly_core::{
     AmbientOcclusionMode, GiRadiosityConfig, HemisphereTracker, LightPackage, MoonlyConfig,
     MoonlyCorePlugin, MoonlyLight, MoonlyLightFlags, MoonlyLightType, MoonlyNativeAmbient,
     MoonlyNativeForward, MoonlyNativePost, MoonlyPipelineTier, ShaderBus, ShadowFilterMode,
-    SunCascadeConfig, VirtualGiLight, VolumetricLightSettings, WeatherEnvironment,
+    SunCascadeConfig, SunCascadeFootprint, VirtualGiLight, VolumetricLightSettings,
+    WeatherEnvironment,
 };
 pub use moonly_cull::{
     LightVisibilityState, MoonlyCullPlugin, MoonlyHomOccluder, MoonlyHomView, OccRasterizer,

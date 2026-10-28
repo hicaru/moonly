@@ -128,25 +128,37 @@ fn sync_sun_package(
     target.cascades.clear();
     target
         .cascades
-        .extend(source.cascades.iter().map(|cascade| MoonlySunCascade {
-            view: MoonlyShadowView {
-                light_index: 0,
-                xform: SpotShadowXform {
-                    view: cascade.view,
-                    proj: cascade.proj,
-                    combine: cascade.combine,
-                    smap_size: target.pool_size,
-                    screen_space_area: 1.0,
-                },
-                rect: MoonlyShadowRect {
-                    x: 0,
-                    y: 0,
-                    size: target.pool_size,
-                },
-            },
-            split_near: cascade.split_near,
-            split_far: cascade.split_far,
-        }));
+        .extend(
+            source
+                .cascades
+                .iter()
+                .enumerate()
+                .map(|(index, cascade)| MoonlySunCascade {
+                    view: MoonlyShadowView {
+                        light_index: 0,
+                        xform: SpotShadowXform {
+                            view: cascade.view,
+                            proj: cascade.proj,
+                            combine: cascade.combine,
+                            smap_size: target.pool_size,
+                            screen_space_area: 1.0,
+                        },
+                        rect: MoonlyShadowRect {
+                            x: 0,
+                            y: 0,
+                            size: target.pool_size,
+                        },
+                    },
+                    prev_combine: crate::sun_cascades::previous_cascade_combine(
+                        &source.cascades,
+                        index,
+                    ),
+                    split_near: cascade.split_near,
+                    split_far: cascade.split_far,
+                    depth_bias: cascade.depth_bias,
+                    blend_band: cascade.blend_band,
+                }),
+        );
 }
 
 fn active_camera_params(

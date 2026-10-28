@@ -130,13 +130,7 @@ pub(crate) fn fill_forward_view(
     let sun_enabled = direct.is_some_and(|light| light.flags.contains(MoonlyLightFlags::SHADOW))
         && shadows.sun_batches.len() >= 3;
     let sun = direct.map_or_else(MoonlySunUniform::default, |light| {
-        MoonlySunUniform::new(
-            light,
-            bindings.camera,
-            &bindings.cascades.cascades,
-            shadows,
-            bindings.cascades.depth_bias,
-        )
+        MoonlySunUniform::new(light, bindings.camera, &bindings.cascades.cascades, shadows)
     });
     view.lights.set(lights);
     view.lights.write_buffer(bindings.device, bindings.queue);

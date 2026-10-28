@@ -47,8 +47,11 @@ impl ExtractResource<RenderApp> for MoonlyShadowPackage {
 #[derive(Debug, Clone, Copy, Reflect)]
 pub struct MoonlySunCascade {
     pub view: MoonlyShadowView,
+    pub prev_combine: Mat4,
     pub split_near: f32,
     pub split_far: f32,
+    pub depth_bias: f32,
+    pub blend_band: f32,
 }
 
 /// Prepared sun cascades for render extraction.

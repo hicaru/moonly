@@ -161,13 +161,7 @@ fn create_volumetric_bind_group(
         f32::from(sun_clip.w > 0.0),
     );
     let uniform = MoonlyVolumetricUniform {
-        sun: MoonlySunUniform::new(
-            light,
-            view,
-            &inputs.cascades.cascades,
-            shadow,
-            inputs.cascades.depth_bias,
-        ),
+        sun: MoonlySunUniform::new(light, view, &inputs.cascades.cascades, shadow),
         world_from_clip: clip_from_world.inverse(),
         params: Vec4::new(
             inputs.config.density,

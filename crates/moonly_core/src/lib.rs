@@ -11,6 +11,7 @@ pub mod projector;
 pub mod shader_bus;
 pub mod shadow_package;
 pub mod spot_xform;
+pub mod sun_cascade_config;
 mod weather_fog;
 
 use bevy::{
@@ -29,7 +30,7 @@ pub use crate::{
         DEFAULT_GI_CLIP_METERS, DEFAULT_GI_PHOTONS, DEFAULT_GI_REFLECTIVITY,
         DEFAULT_SMAP_POOL_SIZE, DEFAULT_SUN_DIAGONAL_OFFSET_METERS, DEFAULT_SUN_FAR_METERS,
         DEFAULT_SUN_MIDDLE_METERS, DEFAULT_SUN_NEAR_METERS, GiRadiosityConfig, MoonlyConfig,
-        MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig,
+        MoonlyPipelineTier, ShadowFilterMode, SunCascadeConfig, SunCascadeFootprint,
     },
     hemisphere::{
         HEMI_CUBE_DIRS, HEMI_FALL_SPEED, HEMI_RISE_SPEED, HEMI_SAMPLE_COUNT, HEMI_SAMPLE_DIRS,
@@ -105,6 +106,7 @@ impl Plugin for MoonlyCorePlugin {
         .register_type::<AmbientOcclusionMode>()
         .register_type::<AmbientOcclusionSettings>()
         .register_type::<SunCascadeConfig>()
+        .register_type::<SunCascadeFootprint>()
         .register_type::<GiRadiosityConfig>()
         .register_type::<MoonlyLight>()
         .register_type::<MoonlyLightType>()

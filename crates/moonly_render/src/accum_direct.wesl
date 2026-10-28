@@ -19,9 +19,14 @@ struct MoonlySunUniform {
     color: vec4<f32>,
     splits_near: vec4<f32>,
     splits_far: vec4<f32>,
+    cascade_biases: vec4<f32>,
+    blend_bands: vec4<f32>,
     shadow_near_from_world: mat4x4<f32>,
     shadow_middle_from_world: mat4x4<f32>,
     shadow_far_from_world: mat4x4<f32>,
+    previous_near_from_world: mat4x4<f32>,
+    previous_middle_from_world: mat4x4<f32>,
+    previous_far_from_world: mat4x4<f32>,
 };
 
 struct FullscreenVertexOutput {
@@ -48,28 +53,70 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
     var visibility = 0.0;
     if view_depth < sun.splits_far.x {
-        visibility = cascade_visibility(
+        let current = cascade_visibility(
             shadow_near,
             sun.shadow_near_from_world,
             position.xyz,
             sun.splits_far.w > 0.5,
             in.position.xy,
+            sun.cascade_biases.x,
+        );
+        let previous = cascade_visibility(
+            shadow_near,
+            sun.previous_near_from_world,
+            position.xyz,
+            sun.splits_far.w > 0.5,
+            in.position.xy,
+            sun.cascade_biases.x,
+        );
+        visibility = mix(
+            previous,
+            current,
+            transition_weight(view_depth, sun.splits_near.x, sun.blend_bands.x),
         );
     } else if view_depth < sun.splits_far.y {
-        visibility = cascade_visibility(
+        let current = cascade_visibility(
             shadow_middle,
             sun.shadow_middle_from_world,
             position.xyz,
             false,
             in.position.xy,
+            sun.cascade_biases.y,
+        );
+        let previous = cascade_visibility(
+            shadow_near,
+            sun.previous_middle_from_world,
+            position.xyz,
+            false,
+            in.position.xy,
+            sun.cascade_biases.x,
+        );
+        visibility = mix(
+            previous,
+            current,
+            transition_weight(view_depth, sun.splits_near.y, sun.blend_bands.y),
         );
     } else {
-        visibility = cascade_visibility(
+        let current = cascade_visibility(
             shadow_far,
             sun.shadow_far_from_world,
             position.xyz,
             false,
             in.position.xy,
+            sun.cascade_biases.z,
+        );
+        let previous = cascade_visibility(
+            shadow_middle,
+            sun.previous_far_from_world,
+            position.xyz,
+            false,
+            in.position.xy,
+            sun.cascade_biases.y,
+        );
+        visibility = mix(
+            previous,
+            current,
+            transition_weight(view_depth, sun.splits_near.z, sun.blend_bands.z),
         );
     }
     var surface = moonly_legacy_brdf(
@@ -92,12 +139,20 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     return vec4(sun.color.rgb * surface * visibility, 1.0);
 }
 
+fn transition_weight(view_depth: f32, split_near: f32, blend_band: f32) -> f32 {
+    if blend_band <= 0.0 {
+        return select(0.0, 1.0, view_depth >= split_near);
+    }
+    return clamp((view_depth - split_near) / blend_band, 0.0, 1.0);
+}
+
 fn cascade_visibility(
     shadow_texture: texture_depth_2d,
     shadow_from_world: mat4x4<f32>,
     world_position: vec3<f32>,
     use_minmax: bool,
     screen_xy: vec2<f32>,
+    depth_bias: f32,
 ) -> f32 {
     let clip = shadow_from_world * vec4(world_position, 1.0);
     if clip.w <= 0.0 {
@@ -108,7 +163,7 @@ fn cascade_visibility(
     if any(uv < vec2(0.0)) || any(uv > vec2(1.0)) {
         return 1.0;
     }
-    let receiver_depth = ndc.z + sun.direction_bias.w;
+    let receiver_depth = ndc.z + depth_bias;
     if use_minmax {
         let dimensions = vec2<f32>(textureDimensions(near_minmax));
         let limits = textureLoad(near_minmax, vec2<i32>(uv * dimensions), 0).rg;

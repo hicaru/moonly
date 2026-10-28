@@ -195,13 +195,7 @@ fn create_froxel_bind_group(
     let far = shadow.sun_batches.get(2)?;
     let clip_from_world = view.clip_from_view * view.world_from_view.to_matrix().inverse();
     let uniform = MoonlyFroxelUniform {
-        sun: MoonlySunUniform::new(
-            light,
-            view,
-            &inputs.cascades.cascades,
-            shadow,
-            inputs.cascades.depth_bias,
-        ),
+        sun: MoonlySunUniform::new(light, view, &inputs.cascades.cascades, shadow),
         world_from_clip: clip_from_world.inverse(),
         grid_origin: inputs.config.grid_origin.extend(0.0),
         grid_extent: inputs.config.grid_extent.extend(0.0),
