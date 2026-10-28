@@ -7,9 +7,11 @@ use moonly_core::{
 };
 
 use crate::{
-    CameraFrustumParams, LocalShadowBatches, RainShadowState, SmapAllocator, SpotShadowXform,
-    SunCascades,
+    CameraFrustumParams, LocalShadowBatches, RainComputeParams, RainShadowState, SmapAllocator,
+    SpotShadowXform, SunCascades,
 };
+
+const RAIN_UPDATE_EPSILON: f32 = 1.0 / 255.0;
 
 /// Resources and camera query used by the shadow frame update.
 #[derive(SystemParam)]
@@ -190,14 +192,15 @@ fn update_rain_shadow(
     rain: &mut RainShadowState,
     cam: &CameraFrustumParams,
 ) {
-    if config.rain_wetness <= 0.0 {
+    if config.rain_wetness < RAIN_UPDATE_EPSILON {
         return;
     }
-    *rain = RainShadowState::compute(
-        cam.camera_transform.translation,
-        cam.camera_transform.forward().as_vec3(),
-        rain.rain_direction,
-        cam.fov_y_radians,
-        cam.aspect_ratio,
-    );
+    let mut next = RainShadowState::compute(RainComputeParams {
+        camera: *cam,
+        rain_direction: rain.rain_direction,
+        config: config.rain_wet_surface,
+        pool_size: config.smap_pool_size,
+    });
+    next.generation = rain.generation.saturating_add(1);
+    *rain = next;
 }

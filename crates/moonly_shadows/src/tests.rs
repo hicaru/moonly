@@ -190,16 +190,35 @@ fn shadow_update_uses_active_camera_and_computes_rain() {
         config.smap_pool_size,
     );
     assert_cascades_approx(app.world().resource::<SunCascades>(), &expected);
-    let rain = RainShadowState::compute(
-        selected.camera_transform.translation,
-        selected.camera_transform.forward().as_vec3(),
-        RainShadowState::default().rain_direction,
-        selected.fov_y_radians,
-        selected.aspect_ratio,
-    );
+    let rain = RainShadowState::compute(RainComputeParams {
+        camera: selected,
+        rain_direction: RainShadowState::default().rain_direction,
+        config: config.rain_wet_surface,
+        pool_size: config.smap_pool_size,
+    });
     let actual_rain = app.world().resource::<RainShadowState>();
     assert!(actual_rain.combine.abs_diff_eq(rain.combine, 1.0e-5));
     assert!(actual_rain.sphere_center.distance(rain.sphere_center) < 1.0e-5);
+    assert_eq!(actual_rain.generation, 1);
+}
+
+#[test]
+fn rain_below_epsilon_preserves_the_last_matrix_and_generation() {
+    let mut app = shadow_app(MoonlyConfig {
+        rain_wetness: 0.001,
+        ..MoonlyConfig::default()
+    });
+    spawn_camera(&mut app, CameraFrustumParams::default(), true, 0);
+    let previous = RainShadowState {
+        combine: Mat4::from_scale(Vec3::splat(2.0)),
+        generation: 7,
+        ..RainShadowState::default()
+    };
+    app.world_mut().insert_resource(previous);
+    app.update();
+    let actual = app.world().resource::<RainShadowState>();
+    assert_eq!(actual.combine, previous.combine);
+    assert_eq!(actual.generation, 7);
 }
 
 #[test]
@@ -277,5 +296,5 @@ fn shadow_update_does_not_substitute_a_default_camera() {
     app.update();
 
     assert_eq!(app.world().resource::<SunCascades>(), &before);
-    assert!(app.world().resource::<SmapAllocator>().allocated.is_empty());
+    assert_eq!(app.world().resource::<SmapAllocator>().allocated.len(), 0);
 }

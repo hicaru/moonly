@@ -14,7 +14,8 @@ pub use crate::{
     local_batches::{LocalShadowBatch, LocalShadowBatches, LocalShadowView},
     rain_shadow::{
         DEFAULT_RAIN_MAX_DISTANCE_METERS, RAIN_CULL_COP_OFFSET_METERS,
-        RAIN_ORTHO_XFORM_OFFSET_METERS, RAIN_SOURCE_OFFSET_METERS, RainShadowState,
+        RAIN_ORTHO_XFORM_OFFSET_METERS, RAIN_SOURCE_OFFSET_METERS, RainComputeParams,
+        RainShadowState,
     },
     shadow_update::update_shadow_cascades_and_atlas,
     smap_allocator::{SmapAllocator, SmapRect},
