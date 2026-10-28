@@ -244,7 +244,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlyForwardBindGrou
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(group) = view.bind_group.as_ref() else {
-            return RenderCommandResult::Skip;
+            return RenderCommandResult::Failure("Moonly forward lighting is not prepared");
         };
         pass.set_bind_group(I, group, &[]);
         RenderCommandResult::Success
