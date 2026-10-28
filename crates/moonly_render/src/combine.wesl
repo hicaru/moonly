@@ -112,9 +112,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return vec4(0.0, 0.0, 0.0, 1.0);
     }
 
-    let normal_sample = textureLoad(normal_texture, pixel, 0);
-    let normal = normalize(normal_sample.xyz);
-    let unlit = normal_sample.w < 0.0;
+    let normal = normalize(textureLoad(normal_texture, pixel, 0).xyz);
+    let unlit = position.w >= 3.0;
     if constants::MOONLY_DEBUG_VIEW == 2u {
         return vec4(normal * 0.5 + vec3(0.5), 1.0);
     }
