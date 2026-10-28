@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(pkg.v_shadowed.len(), 1);
 
         let gi = app.world().resource::<GiLightField>();
-        assert!(!gi.virtual_lights.is_empty());
+        assert_ne!(gi.virtual_lights.len(), 0);
 
         let batches = app.world().resource::<LocalShadowBatches>();
         assert_eq!(batches.view_count(), 1);

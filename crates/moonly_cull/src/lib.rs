@@ -2,6 +2,7 @@
 
 mod caster_feedback;
 pub mod hom;
+mod hom_cache;
 mod hom_geometry;
 mod hom_light;
 pub mod light_vis;
@@ -14,6 +15,7 @@ use moonly_render::MoonlyCasterVisibility;
 
 pub use crate::{
     hom::MoonlyHomView,
+    hom_cache::MoonlyHomDiagnostics,
     hom_geometry::MoonlyHomOccluder,
     light_vis::{
         EYE_IN_CONE_BIAS_RAD, EYE_IN_CONE_SCALE, LightVisibilityState, SAFE_WORLD_BOUND_METERS,
@@ -39,6 +41,10 @@ impl Plugin for MoonlyCullPlugin {
             .register_type::<MoonlyHomView>()
             .init_resource::<OccRasterizer>()
             .init_resource::<MoonlyCasterVisibility>()
+            .init_resource::<hom_cache::HomFrameClock>()
+            .init_resource::<hom_cache::HomTriangleSkipCache>()
+            .init_resource::<hom_cache::HomVisibilityCache>()
+            .init_resource::<MoonlyHomDiagnostics>()
             .init_resource::<hom_geometry::MoonlyHomGeometry>()
             .add_systems(
                 PostUpdate,
@@ -52,6 +58,7 @@ impl Plugin for MoonlyCullPlugin {
                 (
                     hom_light::apply_hom_light_visibility,
                     caster_feedback::update_smapvis,
+                    hom::update_hom_visibility_diagnostics,
                 )
                     .chain()
                     .after(MoonlySystemSet::CollectLights)

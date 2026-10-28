@@ -22,7 +22,14 @@ pub(crate) struct HomTriangle {
 pub(crate) struct MoonlyHomGeometry {
     pub triangles: Vec<HomTriangle>,
     signature: u64,
+    revision: u64,
     initialized: bool,
+}
+
+impl MoonlyHomGeometry {
+    pub(crate) const fn revision(&self) -> u64 {
+        self.revision
+    }
 }
 
 type OccluderQuery<'w, 's> = Query<
@@ -61,6 +68,7 @@ pub(crate) fn sync_hom_geometry(
         }
     }
     geometry.signature = signature;
+    geometry.revision = geometry.revision.wrapping_add(1);
     geometry.initialized = true;
 }
 

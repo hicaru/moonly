@@ -82,20 +82,20 @@ impl OccRasterizer {
         unsafe_code,
         reason = "Coordinates are clamped to 0..64 and buffer length is verified before raw pointer access."
     )]
-    pub fn rasterize_triangle(&mut self, v0: Vec3, v1: Vec3, v2: Vec3) {
+    pub fn rasterize_triangle(&mut self, v0: Vec3, v1: Vec3, v2: Vec3) -> bool {
         if self.buf_depth_0.len() < OCC_DIM_0 * OCC_DIM_0 {
-            return;
+            return false;
         }
         let min_x = v0.x.min(v1.x).min(v2.x).floor().max(0.0) as usize;
         let max_x = v0.x.max(v1.x).max(v2.x).ceil().min(63.0) as usize;
         let min_y = v0.y.min(v1.y).min(v2.y).floor().max(0.0) as usize;
         let max_y = v0.y.max(v1.y).max(v2.y).ceil().min(63.0) as usize;
         if min_x > max_x || min_y > max_y {
-            return;
+            return false;
         }
         let area = (v2.x - v0.x) * (v1.y - v0.y) - (v2.y - v0.y) * (v1.x - v0.x);
         if area.abs() < 1.0e-5 {
-            return;
+            return false;
         }
         let inv_area = 1.0 / area;
         let dx12 = v2.x - v1.x;
@@ -105,6 +105,7 @@ impl OccRasterizer {
         let is_flat_z = v0.z.to_bits() == v1.z.to_bits() && v1.z.to_bits() == v2.z.to_bits();
         let flat_z_val = if is_flat_z { df_2_s32(v0.z) } else { 0 };
         let dst_ptr = self.buf_depth_0.as_mut_ptr();
+        let mut rasterized = false;
 
         for y in min_y..=max_y {
             let py = y as f32 + 0.5;
@@ -140,10 +141,12 @@ impl OccRasterizer {
                     let cell = dst_ptr.add(row_off + x);
                     if z < *cell {
                         *cell = z;
+                        rasterized = true;
                     }
                 }
             }
         }
+        rasterized
     }
 
     /// Apply 3x3 cross crack-filling dilation and build the 4-level Hi-Z pyramid (`propagade`).

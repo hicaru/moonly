@@ -10,6 +10,7 @@ use moonly_render::{MoonlyCamera, MoonlyCameraRole, MoonlyCasterVisibility};
 
 use crate::{
     hom::MoonlyHomView,
+    hom_cache::HomVisibilityCache,
     smap_vis::{SmapVisPhase, SmapVisTracker},
 };
 
@@ -44,14 +45,20 @@ pub(crate) struct CasterInputs<'w, 's> {
     casters: CasterQuery<'w, 's>,
 }
 
+#[derive(SystemParam)]
+pub(crate) struct CasterFrameInputs<'w, 's> {
+    cache: ResMut<'w, HomVisibilityCache>,
+    frame: Local<'s, u32>,
+}
+
 pub(crate) fn update_smapvis(
     mut commands: Commands,
     inputs: CasterInputs,
     mut lights: LightQuery,
     mut visibility: ResMut<MoonlyCasterVisibility>,
-    mut frame: Local<u32>,
+    mut frame_inputs: CasterFrameInputs,
 ) {
-    *frame = frame.wrapping_add(1);
+    *frame_inputs.frame = frame_inputs.frame.wrapping_add(1);
     visibility.clear();
     let hom = active_hom(&inputs);
     for (entity, light, tracker) in &mut lights {
@@ -67,7 +74,13 @@ pub(crate) fn update_smapvis(
             continue;
         }
         if let Some(hom) = hom {
-            advance_tracker(&mut tracker, hom, &inputs, *frame);
+            advance_tracker(
+                &mut tracker,
+                hom,
+                &inputs,
+                &mut frame_inputs.cache,
+                *frame_inputs.frame,
+            );
             for caster in &tracker.invisible {
                 visibility.insert(entity, Entity::from_bits(*caster));
             }
@@ -90,6 +103,7 @@ fn advance_tracker(
     tracker: &mut SmapVisTracker,
     hom: &MoonlyHomView,
     inputs: &CasterInputs,
+    cache: &mut HomVisibilityCache,
     frame: u32,
 ) {
     if tracker.phase == SmapVisPhase::Scan {
@@ -101,12 +115,17 @@ fn advance_tracker(
     if tracker.phase == SmapVisPhase::Test
         && let Some(caster) = tracker.candidates.get(tracker.current_test_index)
     {
-        tracker.last_probe_fragments = u32::from(probe_caster(hom, inputs, *caster));
+        tracker.last_probe_fragments = u32::from(probe_caster(hom, inputs, cache, *caster));
     }
     tracker.step_frame(frame);
 }
 
-fn probe_caster(hom: &MoonlyHomView, inputs: &CasterInputs, caster: u64) -> bool {
+fn probe_caster(
+    hom: &MoonlyHomView,
+    inputs: &CasterInputs,
+    cache: &mut HomVisibilityCache,
+    caster: u64,
+) -> bool {
     let Ok((_, mesh, transform, material)) = inputs.casters.get(Entity::from_bits(caster)) else {
         return true;
     };
@@ -128,7 +147,7 @@ fn probe_caster(hom: &MoonlyHomView, inputs: &CasterInputs, caster: u64) -> bool
     else {
         return true;
     };
-    hom.aabb_visible(world_aabb(aabb, transform))
+    hom.aabb_visible_cached(cache, caster, world_aabb(aabb, transform))
 }
 
 fn world_aabb(aabb: Aabb, transform: &GlobalTransform) -> Aabb {

@@ -41,6 +41,11 @@ fn main() -> AppExit {
             } else {
                 0.0
             },
+            volumetrics: moonly_core::VolumetricQualityConfig {
+                quality: support::float_arg("--vol-quality", 1.0),
+                fade_distance_meters: support::float_arg("--vol-fade", 80.0),
+                ..moonly_core::VolumetricQualityConfig::default()
+            },
             ..MoonlyConfig::moonly_r4()
         })
         .insert_resource(moonly_core::WeatherEnvironment {
@@ -81,6 +86,7 @@ fn main() -> AppExit {
                 move_cascade_camera,
                 report_exposure_probe,
                 report_gpu_probe,
+                report_hom_probe,
                 capture_system,
             )
                 .chain(),
@@ -149,6 +155,22 @@ fn report_gpu_probe(diagnostics: Res<MoonlyGpuDiagnostics>, mut frame: Local<u32
             GpuTiming::Unavailable => info!("GPU {}: unavailable", pass.label()),
         }
     }
+}
+
+fn report_hom_probe(diagnostics: Res<moonly_cull::MoonlyHomDiagnostics>, mut frame: Local<u32>) {
+    *frame += 1;
+    if *frame != 45 || !std::env::args().any(|arg| arg == "--hom-probe") {
+        return;
+    }
+    info!(
+        "HOM: {} us, rasterized {}, rejected {}, skipped {}, visibility reused {}, tested {}",
+        diagnostics.update_micros,
+        diagnostics.rasterized,
+        diagnostics.rejected,
+        diagnostics.skipped,
+        diagnostics.visibility_reused,
+        diagnostics.visibility_tested
+    );
 }
 
 fn spawn_moonly_camera(commands: &mut Commands, debug_view: MoonlyDebugView) {

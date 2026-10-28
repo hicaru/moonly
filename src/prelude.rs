@@ -4,13 +4,13 @@ pub use bevy::prelude::*;
 pub use moonly_core::{
     AmbientOcclusionMode, GiRadiosityConfig, HemisphereTracker, LightPackage, MoonlyConfig,
     MoonlyCorePlugin, MoonlyLight, MoonlyLightFlags, MoonlyLightType, MoonlyNativeAmbient,
-    MoonlyNativeForward, MoonlyNativePost, MoonlyPipelineTier, ShaderBus, ShadowFilterMode,
-    SunCascadeConfig, SunCascadeFootprint, VirtualGiLight, VolumetricLightSettings,
-    WeatherEnvironment,
+    MoonlyNativeForward, MoonlyNativePost, MoonlyPipelineTier, RainWetSurfaceConfig, ShaderBus,
+    ShadowFilterMode, SunCascadeConfig, SunCascadeFootprint, VirtualGiLight,
+    VolumetricLightSettings, VolumetricQualityConfig, VolumetricSchedule, WeatherEnvironment,
 };
 pub use moonly_cull::{
-    LightVisibilityState, MoonlyCullPlugin, MoonlyHomOccluder, MoonlyHomView, OccRasterizer,
-    OccTestRect, SmapVisPhase, SmapVisTracker,
+    LightVisibilityState, MoonlyCullPlugin, MoonlyHomDiagnostics, MoonlyHomOccluder, MoonlyHomView,
+    OccRasterizer, OccTestRect, SmapVisPhase, SmapVisTracker,
 };
 pub use moonly_gi::{
     AmbientOcclusionSettings, GiLightCache, GiLightField, GiRayGeometry, GiRayHit, GiRayQuery,
@@ -32,8 +32,8 @@ pub use moonly_render::{
 };
 pub use moonly_shadows::{
     CameraFrustumParams, LocalShadowBatch, LocalShadowBatches, LocalShadowView,
-    MoonlyShadowsPlugin, RainShadowState, SE_SUN_FAR, SE_SUN_MIDDLE, SE_SUN_NEAR, SmapAllocator,
-    SmapRect, SpotShadowXform, SunCascadeSlice, SunCascades,
+    MoonlyShadowsPlugin, RainComputeParams, RainShadowState, SE_SUN_FAR, SE_SUN_MIDDLE,
+    SE_SUN_NEAR, SmapAllocator, SmapRect, SpotShadowXform, SunCascadeSlice, SunCascades,
 };
 pub use moonly_volumetrics::{
     MoonlyVolumetricsPlugin, SunShaftsConfig, SunShaftsMode, evaluate_volumetric_sunshaft,
