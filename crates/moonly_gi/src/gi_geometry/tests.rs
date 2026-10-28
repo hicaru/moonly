@@ -123,12 +123,13 @@ fn skinned_meshes_are_excluded_and_plugin_runs_without_assets() {
         .init_resource::<MoonlyConfig>()
         .add_plugins(MoonlyGiPlugin);
     headless.update();
-    assert!(
+    assert_eq!(
         headless
             .world()
             .resource::<GiLightField>()
             .virtual_lights
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -169,10 +170,8 @@ fn unchanged_plugin_frames_cast_no_rays_and_light_removal_clears_cache() {
     app.world_mut().entity_mut(light).despawn();
     app.update();
     assert_eq!(app.world().resource::<GiLightCache>().light_count(), 0);
-    assert!(
-        app.world()
-            .resource::<GiLightField>()
-            .virtual_lights
-            .is_empty()
+    assert_eq!(
+        app.world().resource::<GiLightField>().virtual_lights.len(),
+        0
     );
 }

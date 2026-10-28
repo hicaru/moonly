@@ -61,7 +61,7 @@ fn monolith_traces_eight_candidates_per_retained_photon() {
     let (late_reflector, _) = targeted_reflector(8, 5.0);
     out.clear();
     gi_generate_monolith(&point_light(), &test_config(), &[late_reflector], &mut out);
-    assert!(out.is_empty());
+    assert_eq!(out.len(), 0);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn monolith_direction_is_reflected_and_position_is_not_offset() {
     let mut out = Vec::new();
     gi_generate_monolith(&light, &cfg, &[reflector], &mut out);
     let Some(virtual_light) = out.first() else {
-        return assert!(!out.is_empty());
+        return assert_ne!(out.len(), 0);
     };
     let reflected = incident - normal * (2.0 * incident.dot(normal));
     assert_vec_near(virtual_light.direction, reflected);
@@ -131,7 +131,7 @@ fn monolith_generation_reproduces_seeded_results_and_ignores_albedo() {
     reflector.albedo = Vec3::ZERO;
     gi_generate_monolith(&light, &cfg, &[reflector], &mut second);
     assert_eq!(first, second);
-    assert!(!first.is_empty());
+    assert_ne!(first.len(), 0);
 }
 
 #[test]
@@ -146,14 +146,14 @@ fn generators_reject_zero_photons_and_invalid_ranges() {
         let mut scratch = Vec::new();
         gi_generate_monolith(&light, &cfg, &[reflector], &mut monolith);
         gi_generate_enhanced(&light, &cfg, &[reflector], &mut enhanced, &mut scratch);
-        assert!(monolith.is_empty());
-        assert!(enhanced.is_empty());
+        assert_eq!(monolith.len(), 0);
+        assert_eq!(enhanced.len(), 0);
     }
     light.range = 10.0;
     cfg.num_photons = 0;
     let mut out = Vec::new();
     gi_generate_monolith(&light, &cfg, &[reflector], &mut out);
-    assert!(out.is_empty());
+    assert_eq!(out.len(), 0);
 }
 
 #[test]
@@ -163,5 +163,23 @@ fn direct_lights_do_not_emit_unsupported_monolith_photons() {
     let (reflector, _) = targeted_reflector(7, 5.0);
     let mut out = Vec::new();
     gi_generate_monolith(&light, &test_config(), &[reflector], &mut out);
-    assert!(out.is_empty());
+    assert_eq!(out.len(), 0);
+}
+
+#[test]
+fn enhanced_spot_photons_use_the_narrowed_parent_cone() {
+    let mut light = point_light();
+    light.light_type = MoonlyLightType::Spot;
+    light.direction = Vec3::NEG_Y;
+    light.right = Vec3::X;
+    light.cone_angle = 1.2;
+    let basis = EnhancedLightBasis::new(&light, 64, false);
+    let Some(basis) = basis else {
+        return assert!(basis.is_some());
+    };
+    let half_angle = light.cone_angle * 0.5 * SPOT_GI_CONE_SCALE;
+    for index in 0..64 {
+        let direction = basis.direction(index);
+        assert!(direction.dot(light.direction) >= half_angle.cos() - 1.0e-5);
+    }
 }

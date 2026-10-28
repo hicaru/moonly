@@ -6,6 +6,7 @@ mod gi_bvh;
 mod gi_cache;
 mod gi_geometry;
 mod gi_intersection;
+mod gi_range;
 mod gi_ray;
 mod gi_sampling;
 mod gi_system;
@@ -36,7 +37,7 @@ pub use crate::{
     glow::{MoonlyGlow, MoonlyGlowCache},
 };
 
-/// Raw WESL source for `gi.wesl`.
+/// Reference shader source. Runtime virtual lights use the Moonly render accumulation passes.
 pub const GI_WESL_SOURCE: &str = include_str!("gi.wesl");
 
 /// Plugin that registers GI radiosity bounce generation and ambient occlusion settings.
@@ -100,12 +101,12 @@ mod tests {
         let cfg = GiRadiosityConfig::default();
         let mut out_mono = Vec::new();
         gi_generate_monolith(&light, &cfg, &[floor], &mut out_mono);
-        assert!(!out_mono.is_empty());
+        assert_ne!(out_mono.len(), 0);
 
         let mut out_enh = Vec::new();
         let mut scratch = Vec::new();
         gi_generate_enhanced(&light, &cfg, &[floor], &mut out_enh, &mut scratch);
-        assert!(!out_enh.is_empty());
+        assert_ne!(out_enh.len(), 0);
 
         let lit = evaluate_reflected_gi_at_point(Vec3::new(0.0, 0.5, 0.0), Vec3::NEG_Y, &out_enh);
         assert!(lit.length() > 0.0);

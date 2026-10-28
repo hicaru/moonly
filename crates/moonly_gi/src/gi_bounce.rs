@@ -6,6 +6,7 @@ use moonly_core::{
 };
 
 pub(crate) use crate::gi_intersection::raycast_all_reflectors;
+use crate::gi_range::reference_range;
 use crate::gi_ray::{GiRayGeometry, GiRayQuery};
 use crate::gi_sampling::{EnhancedLightBasis, MONOLITH_LUT, MoonlyRandom, monolith_photon_dir};
 pub use crate::gi_system::update_gi_light_field;
@@ -15,8 +16,6 @@ pub const MIN_VIRTUAL_GI_RADIUS_METERS: f32 = 0.25;
 
 /// Cone narrowing factor for enhanced spot GI photon rays.
 pub const SPOT_GI_CONE_SCALE: f32 = 0.8;
-const MONOLITH_MIN_ENERGY: f32 = 1.0 / 255.0;
-const MONOLITH_MIN_RANGE: f32 = 0.1;
 
 /// Axis-aligned reflector box for real-time GI photon raycasting.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Reflect)]
@@ -227,7 +226,6 @@ fn normalize_monolith_lights(
     }
     let scale = cfg.reflectivity / total_energy;
     let intensity = (light.color.x + light.color.y + light.color.z) * (1.0 / 3.0);
-    let inv_min_energy = MONOLITH_MIN_ENERGY.recip();
     let mut write = first;
     for read in first..out_virtual.len() {
         let Some(&cand) = out_virtual.get(read) else {
@@ -235,8 +233,7 @@ fn normalize_monolith_lights(
         };
         let energy = cand.color.x * scale;
         let reflected_energy = intensity * energy;
-        let range = (reflected_energy - MONOLITH_MIN_ENERGY) * inv_min_energy;
-        if reflected_energy >= cfg.energy_clip && range >= MONOLITH_MIN_RANGE {
+        if let Some(range) = reference_range(reflected_energy, cfg.energy_clip) {
             if let Some(slot) = out_virtual.get_mut(write) {
                 *slot = VirtualGiLight {
                     color: light.color * energy,

@@ -75,7 +75,7 @@ fn unchanged_generation_casts_no_rays_and_preserves_all_cached_lights() {
     let first_rays = geometry.rays_traced();
     let first_lights = field.virtual_lights.clone();
     assert_eq!(first_rays, 16);
-    assert!(!first_lights.is_empty());
+    assert_ne!(first_lights.len(), 0);
 
     field.virtual_lights.clear();
     generate(

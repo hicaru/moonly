@@ -1,4 +1,5 @@
-// Moonly-Monolith R4 virtual GI bounce accumulation, HDAO, SSDO, and Activision colored AO in WESL.
+// Reference shader specimen for GI bounce accumulation and AO.
+// Runtime virtual lights use the Moonly render accumulation passes.
 
 struct VirtualGiLightGpu {
     position_range: vec4<f32>,

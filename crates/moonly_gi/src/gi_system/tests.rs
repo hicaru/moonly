@@ -35,7 +35,7 @@ fn unshadowed_point_and_spot_lights_generate_gi() {
     };
     package.v_point.push(point.clone());
     let field = generate(&config(MoonlyPipelineTier::MonolithR4), &package);
-    assert!(!field.virtual_lights.is_empty());
+    assert_ne!(field.virtual_lights.len(), 0);
 
     package.v_point.clear();
     point.light_type = MoonlyLightType::Spot;
@@ -44,7 +44,7 @@ fn unshadowed_point_and_spot_lights_generate_gi() {
     point.cone_angle = 0.8;
     package.v_spot.push(point);
     let field = generate(&config(MoonlyPipelineTier::MonolithR4), &package);
-    assert!(!field.virtual_lights.is_empty());
+    assert_ne!(field.virtual_lights.len(), 0);
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn split_shadowed_point_matches_one_unshadowed_point() {
         let config = config(tier);
         let split_field = generate(&config, &shadowed);
         let point_field = generate(&config, &unshadowed);
-        assert!(!split_field.virtual_lights.is_empty());
+        assert_ne!(split_field.virtual_lights.len(), 0);
         assert_eq!(split_field.virtual_lights, point_field.virtual_lights);
     }
 }
@@ -80,7 +80,7 @@ fn disabled_and_non_gi_package_lights_do_not_generate() {
         ..MoonlyLight::default()
     });
     let field = generate(&config(MoonlyPipelineTier::MonolithR4), &package);
-    assert!(field.virtual_lights.is_empty());
+    assert_eq!(field.virtual_lights.len(), 0);
 
     package.v_point.clear();
     package.v_point.push(MoonlyLight {
@@ -90,5 +90,5 @@ fn disabled_and_non_gi_package_lights_do_not_generate() {
     let mut config = config(MoonlyPipelineTier::MonolithR4);
     config.gi.enabled = false;
     let field = generate(&config, &package);
-    assert!(field.virtual_lights.is_empty());
+    assert_eq!(field.virtual_lights.len(), 0);
 }
