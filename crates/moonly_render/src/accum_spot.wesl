@@ -10,6 +10,7 @@ import package::lighting::{moonly_brdf, moonly_legacy_brdf};
 @group(0) @binding(9) var projector_sampler: sampler;
 @group(0) @binding(10) var jitter_texture: texture_2d_array<f32>;
 @group(0) @binding(11) var jitter_sampler: sampler;
+@group(0) @binding(12) var transmittance_atlas: texture_2d<f32>;
 
 struct MoonlySpotUniform {
     position_range: vec4<f32>,
@@ -112,13 +113,13 @@ fn fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     return vec4(radiance * surface * visibility, 1.0);
 }
 
-fn shadow_visibility(world_position: vec3<f32>, screen_xy: vec2<f32>) -> f32 {
+fn shadow_visibility(world_position: vec3<f32>, screen_xy: vec2<f32>) -> vec3<f32> {
     if spot.shadow_settings.x < 0.5 {
-        return 1.0;
+        return vec3(1.0);
     }
     let clip = spot.shadow_from_world * vec4(world_position, 1.0);
     if clip.w <= 0.0 {
-        return 0.0;
+        return vec3(0.0);
     }
     let ndc = clip.xyz / clip.w;
     let local_uv = ndc.xy * vec2(0.5, -0.5) + vec2(0.5);
@@ -146,7 +147,14 @@ fn shadow_visibility(world_position: vec3<f32>, screen_xy: vec2<f32>) -> f32 {
             receiver_depth,
         );
     }
-    return visibility * 0.25;
+    let transmittance_uv = spot.shadow_transform.xy + local_uv * spot.shadow_transform.z;
+    let transmittance = textureSampleLevel(
+        transmittance_atlas,
+        projector_sampler,
+        transmittance_uv,
+        0.0,
+    ).rgb;
+    return mix(transmittance, vec3(1.0), visibility * 0.25);
 }
 
 fn projector_color(world_position: vec3<f32>) -> vec3<f32> {

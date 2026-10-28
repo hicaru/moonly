@@ -7,6 +7,7 @@ struct MoonlySurfaceUniform {
     local: vec4<f32>,
     ambient: vec4<f32>,
     hemi: vec4<f32>,
+    transmittance: vec4<f32>,
 };
 
 @group(4) @binding(0) var<uniform> surface: MoonlySurfaceUniform;

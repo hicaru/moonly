@@ -40,9 +40,18 @@ pub(crate) fn render_sun_shadow(
     let diagnostics = diagnostics.as_deref();
     selected.domain.store(1, Ordering::Relaxed);
     for (batch_index, batch) in target.sun_batches.iter().enumerate() {
+        let transmittance = [batch
+            .transmittance
+            .as_ref()
+            .map(|attachment| attachment.get_attachment())];
+        let color_attachments = if batch.transmittance.is_some() {
+            &transmittance[..]
+        } else {
+            &[]
+        };
         let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("moonly_sun_shadow"),
-            color_attachments: &[],
+            color_attachments,
             depth_stencil_attachment: Some(batch.depth.get_attachment(StoreOp::Store)),
             timestamp_writes: timer.timestamp_writes(crate::diagnostics::MoonlyPass::ShadowSun),
             occlusion_query_set: None,

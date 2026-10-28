@@ -98,6 +98,7 @@ fn native_layout() -> BindGroupLayoutDescriptor {
                 uniform_buffer::<MoonlyNativeLocalParams>(false),
                 storage_buffer_read_only::<bins::NativeTile>(false),
                 storage_buffer_read_only::<u32>(false),
+                texture_2d(TextureSampleType::Float { filterable: true }),
             ),
         ),
     )
@@ -182,6 +183,14 @@ pub(crate) fn prepare_native_local(
             &params,
             &tiles,
             &indices,
+            context
+                .shadow
+                .batches
+                .first()
+                .and_then(|batch| batch.transmittance.as_ref())
+                .map_or(&context.inputs.fallback.view, |attachment| {
+                    &attachment.texture.default_view
+                }),
         )),
     );
     Some(MoonlyNativeLocalBindGroup {

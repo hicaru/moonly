@@ -97,7 +97,9 @@ pub(crate) fn configure_render_app(render_app: &mut SubApp) {
                 spot_pipeline::init_spot_pipeline,
                 sun_accumulate::init_sun_pipeline,
                 minmax::init_minmax_pipeline,
-                shadow_pipeline::init_shadow_pipeline.after(bevy::pbr::init_prepass_pipeline),
+                shadow_pipeline::init_shadow_pipeline
+                    .after(bevy::pbr::init_prepass_pipeline)
+                    .after(surface::init_surface_layout),
             ),
         );
     configure_prepare_systems(render_app);

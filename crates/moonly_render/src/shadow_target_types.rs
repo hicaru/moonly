@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{BindGroup, TextureView},
-        texture::DepthStencilAttachment,
+        texture::{ColorAttachment, DepthStencilAttachment},
     },
 };
 use moonly_core::{MoonlyLight, MoonlyShadowRect, SpotShadowXform};
@@ -21,6 +21,7 @@ pub(crate) struct MoonlyShadowViewTarget {
 
 pub(crate) struct MoonlyShadowBatchTarget {
     pub depth: DepthStencilAttachment,
+    pub transmittance: Option<ColorAttachment>,
     pub views: Vec<MoonlyShadowViewTarget>,
 }
 
@@ -42,6 +43,7 @@ pub(crate) struct MoonlyShadowViewIndex {
 
 pub(crate) struct MoonlyShadowSample<'a> {
     pub depth: &'a TextureView,
+    pub transmittance: Option<&'a TextureView>,
     pub xform: &'a SpotShadowXform,
     pub rect: MoonlyShadowRect,
     pub atlas_size: u32,
@@ -82,6 +84,10 @@ impl MoonlySpotShadowTarget {
         let view = selected.map(|(_, view)| view);
         Some(MoonlyShadowSample {
             depth: &batch.depth.texture.default_view,
+            transmittance: batch
+                .transmittance
+                .as_ref()
+                .map(|attachment| &attachment.texture.default_view),
             xform: view.map_or(&self.fallback_xform, |view| &view.xform),
             rect: view.map_or(
                 MoonlyShadowRect {

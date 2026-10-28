@@ -37,7 +37,20 @@ fn vertex(input: Vertex) -> VertexOutput {
     return out;
 }
 
+struct MoonlySurfaceUniform {
+    values: vec2<f32>,
+    positive_cube: vec4<f32>,
+    negative_cube: vec4<f32>,
+    local: vec4<f32>,
+    ambient: vec4<f32>,
+    hemi: vec4<f32>,
+    transmittance: vec4<f32>,
+};
+
+@group(5) @binding(0) var<uniform> surface: MoonlySurfaceUniform;
+
 @fragment
-fn fragment(in: VertexOutput) {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     prepass_sample_color_and_alpha_discard(in);
+    return vec4(surface.transmittance.rgb * surface.transmittance.a, 1.0);
 }

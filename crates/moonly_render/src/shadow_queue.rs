@@ -38,6 +38,7 @@ use crate::{
     shadow_pipeline::{
         MoonlyShadowMeshPipeline, MoonlyShadowPipeline, SetMoonlyShadowViewBindGroup,
     },
+    surface::SetMoonlySurfaceBindGroup,
 };
 
 pub(crate) type DrawMoonlyShadow = (
@@ -45,6 +46,7 @@ pub(crate) type DrawMoonlyShadow = (
     SetPrepassViewBindGroup<0>,
     SetPrepassViewBindGroup<1>,
     SetMoonlyShadowViewBindGroup<4>,
+    SetMoonlySurfaceBindGroup<5>,
     CullMoonlyShadow,
     SetMoonlyShadowMeshBindGroup<2>,
     SetMoonlyMotionMeshBindGroup<2>,

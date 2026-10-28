@@ -24,11 +24,16 @@ use moonly_core::{HemisphereTracker, MoonlyConfig, MoonlyNativeForward, WeatherE
 pub struct MoonlySurface {
     /// Moonly material index in `0..4`.
     pub material: f32,
+    /// RGB light transmission and independent shadow coverage.
+    pub transmittance: Vec4,
 }
 
 impl Default for MoonlySurface {
     fn default() -> Self {
-        Self { material: 1.0 }
+        Self {
+            material: 1.0,
+            transmittance: Vec4::new(0.0, 0.0, 0.0, 1.0),
+        }
     }
 }
 
@@ -40,6 +45,7 @@ pub(crate) struct MoonlySurfaceUniform {
     local: Vec4,
     ambient: Vec4,
     hemi: Vec4,
+    transmittance: Vec4,
 }
 
 impl MoonlySurfaceUniform {
@@ -57,6 +63,9 @@ impl MoonlySurfaceUniform {
             local: Vec4::ZERO,
             ambient: environment.ambient_color.extend(1.0),
             hemi: environment.hemi_color,
+            transmittance: surface.map_or(Vec4::new(0.0, 0.0, 0.0, 1.0), |surface| {
+                surface.transmittance
+            }),
         };
         if let Some(tracker) = tracker {
             let [px, py, pz, nx, ny, nz] = tracker.hemi_cube_smooth;
@@ -205,6 +214,20 @@ mod tests {
         ] {
             assert!((material_coordinate(material) - expected).abs() < 1.0e-6);
         }
+    }
+
+    #[test]
+    fn opaque_and_translucent_surfaces_keep_independent_shadow_coverage() {
+        let environment = WeatherEnvironment::default();
+        let opaque = MoonlySurfaceUniform::new(None, None, 0.0, &environment);
+        assert_eq!(opaque.transmittance, Vec4::new(0.0, 0.0, 0.0, 1.0));
+        let transmittance = Vec4::new(0.8, 0.3, 0.1, 0.6);
+        let surface = MoonlySurface {
+            transmittance,
+            ..MoonlySurface::default()
+        };
+        let translucent = MoonlySurfaceUniform::new(Some(&surface), None, 0.0, &environment);
+        assert_eq!(translucent.transmittance, transmittance);
     }
 
     #[test]

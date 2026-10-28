@@ -4,16 +4,16 @@ use bevy::{
     asset::{AssetServer, Handle, load_embedded_asset},
     ecs::system::SystemParamItem,
     material::{MaterialProperties, key::ErasedMaterialPipelineKey},
-    pbr::{MeshPipelineKey, PrepassPipeline, PrepassPipelineSpecializer},
+    pbr::{PrepassPipeline, PrepassPipelineSpecializer},
     prelude::*,
     render::{
         mesh::MeshVertexBufferLayoutRef,
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            FragmentState, PipelineCache, RenderPipelineDescriptor, ShaderStages, ShaderType,
-            SpecializedMeshPipeline, SpecializedMeshPipelineError, UniformBuffer,
-            binding_types::uniform_buffer,
+            ColorTargetState, ColorWrites, FragmentState, PipelineCache, RenderPipelineDescriptor,
+            ShaderStages, ShaderType, SpecializedMeshPipeline, SpecializedMeshPipelineError,
+            TextureFormat, UniformBuffer, binding_types::uniform_buffer,
         },
         renderer::RenderDevice,
     },
@@ -23,6 +23,7 @@ use moonly_core::SpotShadowXform;
 
 use crate::{
     shadow_targets::{MoonlyShadowViewIndex, MoonlySpotShadowTarget},
+    surface::MoonlySurfaceLayout,
     view_targets::DEPTH_FORMAT,
 };
 
@@ -43,12 +44,14 @@ impl From<&SpotShadowXform> for MoonlyShadowViewUniform {
 pub(crate) struct MoonlyShadowPipeline {
     prepass: PrepassPipeline,
     view_layout: BindGroupLayoutDescriptor,
+    surface_layout: BindGroupLayoutDescriptor,
     shader: Handle<Shader>,
 }
 
 pub(crate) fn init_shadow_pipeline(
     mut commands: Commands,
     prepass: Res<PrepassPipeline>,
+    surface: Res<MoonlySurfaceLayout>,
     asset_server: Res<AssetServer>,
 ) {
     let view_layout = BindGroupLayoutDescriptor::new(
@@ -61,6 +64,7 @@ pub(crate) fn init_shadow_pipeline(
     commands.insert_resource(MoonlyShadowPipeline {
         prepass: prepass.clone(),
         view_layout,
+        surface_layout: surface.0.clone(),
         shader: load_embedded_asset!(asset_server.as_ref(), "shadow_depth.wesl"),
     });
 }
@@ -108,27 +112,22 @@ impl SpecializedMeshPipeline for MoonlyShadowMeshPipeline {
         key: Self::Key,
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        let may_discard = key
-            .mesh_key
-            .downcast::<MeshPipelineKey>()
-            .contains(MeshPipelineKey::MAY_DISCARD);
         let mut descriptor = self.prepass.specialize(key, layout)?;
         descriptor.label = Some("moonly_shadow_depth_pipeline".into());
         descriptor.vertex.shader = self.pipeline.shader.clone();
-        descriptor.fragment = descriptor.fragment.take().map(|fragment| FragmentState {
+        let shader_defs = descriptor.vertex.shader_defs.clone();
+        descriptor.fragment = Some(FragmentState {
             shader: self.pipeline.shader.clone(),
-            targets: Vec::new(),
-            ..fragment
+            shader_defs,
+            targets: vec![Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+            ..default()
         });
-        if may_discard && descriptor.fragment.is_none() {
-            descriptor.fragment = Some(FragmentState {
-                shader: self.pipeline.shader.clone(),
-                shader_defs: descriptor.vertex.shader_defs.clone(),
-                targets: Vec::new(),
-                ..default()
-            });
-        }
         descriptor.layout.push(self.pipeline.view_layout.clone());
+        descriptor.layout.push(self.pipeline.surface_layout.clone());
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
             depth.format = DEPTH_FORMAT;
             depth.depth_compare = Some(bevy::render::render_resource::CompareFunction::LessEqual);

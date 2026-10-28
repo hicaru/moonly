@@ -14,6 +14,7 @@ import package::lighting::moonly_brdf;
 @group(0) @binding(12) var<uniform> params: MoonlyNativeLocalParams;
 @group(0) @binding(13) var<storage, read> tiles: array<NativeTile>;
 @group(0) @binding(14) var<storage, read> indices: array<u32>;
+@group(0) @binding(15) var transmittance_atlas: texture_2d<f32>;
 
 struct MoonlySpotUniform {
     position_range: vec4<f32>,
@@ -71,13 +72,13 @@ fn cone_factor(direction_cos: vec4<f32>, inner_cos: f32, direction: vec3<f32>) -
     return select(select(reference, native_cone, inner_cos >= 0.0), 1.0, direction_cos.w < -0.999);
 }
 
-fn projector_color(index: u32, world_position: vec3<f32>) -> f32 {
+fn projector_color(index: u32, world_position: vec3<f32>) -> vec3<f32> {
     if lights[index].shadow_settings.w < 0.5 {
-        return 1.0;
+        return vec3(1.0);
     }
     let clip = lights[index].projector_from_world * vec4(world_position, 1.0);
     if clip.w <= 0.0 {
-        return 0.0;
+        return vec3(0.0);
     }
     let ndc = clip.xy / clip.w;
     let uv = ndc * vec2(0.5, -0.5) + vec2(0.5);
@@ -108,7 +109,14 @@ fn shadow_visibility(index: u32, world_position: vec3<f32>, screen_xy: vec2<f32>
         let sample_uv = rect.xy + sample_local * rect.z;
         visibility += textureSampleCompareLevel(shadow_atlas, shadow_sampler, sample_uv, receiver_depth);
     }
-    return visibility * 0.25;
+    let transmittance_uv = rect.xy + local_uv * rect.z;
+    let transmittance = textureSampleLevel(
+        transmittance_atlas,
+        projector_sampler,
+        transmittance_uv,
+        0.0,
+    ).rgb;
+    return mix(transmittance, vec3(1.0), visibility * 0.25);
 }
 
 fn contribution(index: u32, surface: MoonlyNativeSurface, screen_xy: vec2<f32>) -> vec3<f32> {

@@ -51,7 +51,10 @@ pub(crate) fn spawn_scene(
         Transform::from_xyz(0.0, 1.0, 0.0),
         MoonlyGiCaster::default(),
         MoonlyHomOccluder::default(),
-        MoonlySurface { material: 0.0 },
+        MoonlySurface {
+            material: 0.0,
+            ..MoonlySurface::default()
+        },
         HemisphereTracker::default(),
     ));
 
@@ -67,7 +70,10 @@ pub(crate) fn spawn_scene(
         Transform::from_xyz(2.5, 0.8, -1.0),
         MoonlyGiCaster::default(),
         MoonlyHomOccluder::default(),
-        MoonlySurface { material: 3.0 },
+        MoonlySurface {
+            material: 3.0,
+            ..MoonlySurface::default()
+        },
         HemisphereTracker::default(),
     ));
 
@@ -89,13 +95,7 @@ pub(crate) fn spawn_scene(
     if std::env::args().any(|arg| arg == "--glow") {
         emissive_entity.insert(super::native_reference::glow_component());
     }
-    let blocker = materials.add(blocker_material(&mut images));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.4, 2.4, 0.3))),
-        MeshMaterial3d(blocker),
-        Transform::from_xyz(-0.9, 1.2, 1.35),
-        ReferenceCaster,
-    ));
+    spawn_reference_caster(&mut commands, &mut meshes, &mut materials, &mut images);
     super::native_reference::spawn_transparent(&mut commands, &mut meshes, &mut materials);
     spawn_reference_light(&mut commands, &mut images);
     let mut camera = commands.spawn((
@@ -111,6 +111,27 @@ pub(crate) fn spawn_scene(
         camera.insert(DistanceFog::default());
     }
     spawn_overlay_camera(&mut commands);
+}
+
+fn spawn_reference_caster(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+) {
+    let blocker = materials.add(blocker_material(images));
+    let mut caster = commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.4, 2.4, 0.3))),
+        MeshMaterial3d(blocker),
+        Transform::from_xyz(-0.9, 1.2, 1.35),
+        ReferenceCaster,
+    ));
+    if std::env::args().any(|arg| arg == "--translucent-caster") {
+        caster.insert(MoonlySurface {
+            transmittance: Vec4::new(0.9, 0.2, 0.05, 0.8),
+            ..MoonlySurface::default()
+        });
+    }
 }
 
 fn blocker_material(images: &mut Assets<Image>) -> StandardMaterial {

@@ -3,11 +3,11 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{
-            Extent3d, PipelineCache, TextureDescriptor, TextureDimension, TextureUsages,
-            UniformBuffer,
+            Extent3d, PipelineCache, TextureDescriptor, TextureDimension, TextureFormat,
+            TextureUsages, UniformBuffer,
         },
         renderer::{RenderDevice, RenderQueue},
-        texture::{DepthStencilAttachment, TextureCache},
+        texture::{ColorAttachment, DepthStencilAttachment, TextureCache},
         view::ExtractedView,
     },
 };
@@ -130,10 +130,7 @@ fn prepare_batch(
     atlas_size: u32,
     context: &ShadowViewContext,
 ) -> MoonlyShadowBatchTarget {
-    let texture = inputs
-        .cache
-        .get(&inputs.device, atlas_descriptor(atlas_size));
-    let depth = DepthStencilAttachment::new(texture, None, Some(1.0), None);
+    let (depth, transmittance) = prepare_attachments(inputs, atlas_size);
     let mut views = Vec::with_capacity(batch.views.len());
     for view in &batch.views {
         let Some(light) = inputs.package.v_shadowed.get(view.light_index) else {
@@ -156,7 +153,11 @@ fn prepare_batch(
         }
         views.push(prepare_view(inputs, view, light));
     }
-    MoonlyShadowBatchTarget { depth, views }
+    MoonlyShadowBatchTarget {
+        depth,
+        transmittance: Some(transmittance),
+        views,
+    }
 }
 
 fn prepare_sun_batch(
@@ -166,10 +167,7 @@ fn prepare_sun_batch(
     atlas_size: u32,
     create_minmax: bool,
 ) -> (MoonlyShadowBatchTarget, Option<MoonlyMinMaxTarget>) {
-    let texture = inputs
-        .cache
-        .get(&inputs.device, atlas_descriptor(atlas_size));
-    let depth = DepthStencilAttachment::new(texture, None, Some(1.0), None);
+    let (depth, transmittance) = prepare_attachments(inputs, atlas_size);
     let views = vec![prepare_view(inputs, &cascade.view, light)];
     let minmax = create_minmax.then(|| {
         let size = (atlas_size / 4).max(1);
@@ -179,7 +177,12 @@ fn prepare_sun_batch(
             bind_group: None,
         }
     });
-    (MoonlyShadowBatchTarget { depth, views }, minmax)
+    let batch = MoonlyShadowBatchTarget {
+        depth,
+        transmittance: Some(transmittance),
+        views,
+    };
+    (batch, minmax)
 }
 
 fn prepare_fallback_batch(
@@ -187,10 +190,7 @@ fn prepare_fallback_batch(
     xform: SpotShadowXform,
     atlas_size: u32,
 ) -> MoonlyShadowBatchTarget {
-    let texture = inputs
-        .cache
-        .get(&inputs.device, atlas_descriptor(atlas_size));
-    let depth = DepthStencilAttachment::new(texture, None, Some(1.0), None);
+    let (depth, transmittance) = prepare_attachments(inputs, atlas_size);
     let mut views = Vec::new();
     if let Some(light) = package_spot(&inputs.package) {
         let size = xform.smap_size.clamp(MIN_ATLAS_SIZE, atlas_size);
@@ -201,7 +201,11 @@ fn prepare_fallback_batch(
         };
         views.push(prepare_view(inputs, &view, light));
     }
-    MoonlyShadowBatchTarget { depth, views }
+    MoonlyShadowBatchTarget {
+        depth,
+        transmittance: Some(transmittance),
+        views,
+    }
 }
 
 fn prepare_view(
@@ -222,6 +226,20 @@ fn prepare_view(
         rect: view.rect,
         bind_group,
     }
+}
+
+fn prepare_attachments(
+    inputs: &mut ShadowTargetInputs,
+    size: u32,
+) -> (DepthStencilAttachment, ColorAttachment) {
+    let depth_texture = inputs.cache.get(&inputs.device, atlas_descriptor(size));
+    let mut color_descriptor = atlas_descriptor(size);
+    color_descriptor.label = Some("moonly_shadow_transmittance_atlas");
+    color_descriptor.format = TextureFormat::Rgba8Unorm;
+    let color_texture = inputs.cache.get(&inputs.device, color_descriptor);
+    let depth = DepthStencilAttachment::new(depth_texture, None, Some(1.0), None);
+    let color = ColorAttachment::new(color_texture, None, None, Some(LinearRgba::WHITE.into()));
+    (depth, color)
 }
 
 fn package_spot(package: &LightPackage) -> Option<&MoonlyLight> {

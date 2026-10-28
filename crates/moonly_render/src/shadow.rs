@@ -42,9 +42,18 @@ pub(crate) fn render_spot_shadow(
         if batch.views.is_empty() {
             continue;
         }
+        let transmittance = [batch
+            .transmittance
+            .as_ref()
+            .map(|attachment| attachment.get_attachment())];
+        let color_attachments = if batch.transmittance.is_some() {
+            &transmittance[..]
+        } else {
+            &[]
+        };
         let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("moonly_spot_shadow"),
-            color_attachments: &[],
+            color_attachments,
             depth_stencil_attachment: Some(batch.depth.get_attachment(StoreOp::Store)),
             timestamp_writes: timer.timestamp_writes(crate::diagnostics::MoonlyPass::ShadowLocal),
             occlusion_query_set: None,

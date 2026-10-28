@@ -181,6 +181,10 @@ fn create_spot_bind_group_with_key(
         .or_else(|| context.shadow.first_depth())?;
     let projector_view = projector.map_or(&inputs.fallback.view, |image| &image.texture_view);
     let projector_sampler = projector.map_or(&inputs.fallback.sampler, |image| &image.sampler);
+    let transmittance = sample
+        .as_ref()
+        .and_then(|sample| sample.transmittance)
+        .unwrap_or(&inputs.fallback.view);
     let uniform_data = MoonlySpotUniform::new(
         light,
         context.view,
@@ -210,6 +214,7 @@ fn create_spot_bind_group_with_key(
             projector_sampler,
             &inputs.jitter.view,
             &inputs.jitter.sampler,
+            transmittance,
         )),
     );
     let kind = if light.light_type == MoonlyLightType::Point {
