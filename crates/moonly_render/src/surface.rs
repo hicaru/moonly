@@ -165,21 +165,27 @@ pub(crate) fn prepare_surface_bind_group(
 pub(crate) struct SetMoonlySurfaceBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetMoonlySurfaceBindGroup<I> {
-    type Param = Option<SRes<MoonlySurfaceBindGroup>>;
+    type Param = (
+        Option<SRes<MoonlySurfaceBindGroup>>,
+        Query<'static, 'static, &'static DynamicUniformIndex<MoonlySurfaceUniform>>,
+    );
     type ViewQuery = ();
-    type ItemQuery = &'static DynamicUniformIndex<MoonlySurfaceUniform>;
+    type ItemQuery = ();
 
     fn render<'w>(
-        _item: &P,
+        item: &P,
         _view: ROQueryItem<'w, '_, Self::ViewQuery>,
-        entity: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
-        group: bevy::ecs::system::SystemParamItem<'w, '_, Self::Param>,
+        _entity: Option<()>,
+        params: bevy::ecs::system::SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let (group, indices) = params;
         let Some(group) = group else {
             return RenderCommandResult::Skip;
         };
-        let offset = entity.map_or(0, DynamicUniformIndex::index);
+        let offset = indices
+            .get(item.entity())
+            .map_or(0, DynamicUniformIndex::index);
         let group = group.into_inner();
         pass.set_bind_group(I, &group.0, &[offset]);
         RenderCommandResult::Success
