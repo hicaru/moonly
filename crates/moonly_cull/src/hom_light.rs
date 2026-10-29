@@ -2,10 +2,14 @@ use bevy::{camera::primitives::Aabb, prelude::*};
 use moonly_core::{LightPackage, MoonlyConfig, MoonlyLight, MoonlyLightType};
 use moonly_render::{MoonlyCamera, MoonlyCameraRole};
 
-use crate::{hom::MoonlyHomView, hom_cache::HomVisibilityCache};
+use crate::{
+    hom::MoonlyHomView,
+    hom_cache::{HomVisibilityCache, MoonlyHomCacheConfig},
+};
 
 pub(crate) fn apply_hom_light_visibility(
     config: Res<MoonlyConfig>,
+    cache_config: Res<MoonlyHomCacheConfig>,
     cameras: Query<(&MoonlyHomView, &MoonlyCamera)>,
     mut package: ResMut<LightPackage>,
     mut cache: ResMut<HomVisibilityCache>,
@@ -19,27 +23,33 @@ pub(crate) fn apply_hom_light_visibility(
     else {
         return;
     };
+    let cached = cache_config.enabled;
     package
         .v_point
-        .retain(|light| light_visible(hom, &mut cache, light));
+        .retain(|light| light_visible(hom, &mut cache, light, cached));
     package
         .v_spot
-        .retain(|light| light_visible(hom, &mut cache, light));
+        .retain(|light| light_visible(hom, &mut cache, light, cached));
     package
         .v_shadowed
-        .retain(|light| light_visible(hom, &mut cache, light));
+        .retain(|light| light_visible(hom, &mut cache, light, cached));
 }
 
-fn light_visible(hom: &MoonlyHomView, cache: &mut HomVisibilityCache, light: &MoonlyLight) -> bool {
+fn light_visible(
+    hom: &MoonlyHomView,
+    cache: &mut HomVisibilityCache,
+    light: &MoonlyLight,
+    cached: bool,
+) -> bool {
     if light.light_type == MoonlyLightType::Direct {
         return true;
     }
     let extent = Vec3::splat(light.range.max(0.0));
-    hom.aabb_visible_cached(
-        cache,
-        light_cache_key(light),
-        Aabb::from_min_max(light.position - extent, light.position + extent),
-    )
+    let aabb = Aabb::from_min_max(light.position - extent, light.position + extent);
+    if cached {
+        return hom.aabb_visible_cached(cache, light_cache_key(light), aabb);
+    }
+    hom.aabb_visible(aabb)
 }
 
 fn light_cache_key(light: &MoonlyLight) -> u64 {
@@ -80,7 +90,8 @@ mod tests {
         assert!(light_visible(
             &hom,
             &mut HomVisibilityCache::default(),
-            &light
+            &light,
+            true
         ));
     }
 }

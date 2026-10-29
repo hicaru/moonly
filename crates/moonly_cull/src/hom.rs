@@ -3,7 +3,10 @@ use moonly_core::MoonlyConfig;
 use moonly_render::MoonlyCamera;
 
 use crate::{
-    hom_cache::{HomFrameClock, HomTriangleSkipCache, HomVisibilityCache, MoonlyHomDiagnostics},
+    hom_cache::{
+        HomFrameClock, HomTriangleSkipCache, HomVisibilityCache, MoonlyHomCacheConfig,
+        MoonlyHomDiagnostics,
+    },
     hom_geometry::MoonlyHomGeometry,
     occ_rasterizer::{OCC_DIM_0, OccRasterizer, OccTestRect},
 };
@@ -96,6 +99,7 @@ type HomCameraQuery<'w, 's> = Query<
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct HomUpdateInputs<'w> {
     config: Res<'w, MoonlyConfig>,
+    cache_config: Res<'w, MoonlyHomCacheConfig>,
     geometry: Res<'w, MoonlyHomGeometry>,
     clock: ResMut<'w, HomFrameClock>,
     skip: ResMut<'w, HomTriangleSkipCache>,
@@ -110,6 +114,7 @@ pub(crate) fn update_hom_views(
 ) {
     let HomUpdateInputs {
         config,
+        cache_config,
         geometry,
         mut clock,
         mut skip,
@@ -125,6 +130,7 @@ pub(crate) fn update_hom_views(
         frame,
         geometry: &geometry,
         skip: &mut skip,
+        cache_enabled: cache_config.enabled,
     };
     for (entity, camera, transform, existing) in &mut cameras {
         let enabled =
@@ -158,6 +164,7 @@ struct HomUpdateContext<'a> {
     frame: u32,
     geometry: &'a MoonlyHomGeometry,
     skip: &'a mut HomTriangleSkipCache,
+    cache_enabled: bool,
 }
 
 fn update_view(
@@ -173,7 +180,7 @@ fn update_view(
     view.rasterizer.clear();
     if enabled {
         for (index, triangle) in context.geometry.triangles.iter().enumerate() {
-            if context.skip.should_skip(index, context.frame) {
+            if context.cache_enabled && context.skip.should_skip(index, context.frame) {
                 continue;
             }
             let rasterized = rasterize_triangle(view, triangle);

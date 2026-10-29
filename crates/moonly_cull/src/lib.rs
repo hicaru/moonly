@@ -15,7 +15,7 @@ use moonly_render::MoonlyCasterVisibility;
 
 pub use crate::{
     hom::MoonlyHomView,
-    hom_cache::MoonlyHomDiagnostics,
+    hom_cache::{MoonlyHomCacheConfig, MoonlyHomDiagnostics},
     hom_geometry::MoonlyHomOccluder,
     light_vis::{
         EYE_IN_CONE_BIAS_RAD, EYE_IN_CONE_SCALE, LightVisibilityState, SAFE_WORLD_BOUND_METERS,
@@ -39,6 +39,8 @@ impl Plugin for MoonlyCullPlugin {
             .register_type::<LightVisibilityState>()
             .register_type::<MoonlyHomOccluder>()
             .register_type::<MoonlyHomView>()
+            .register_type::<MoonlyHomCacheConfig>()
+            .init_resource::<MoonlyHomCacheConfig>()
             .init_resource::<OccRasterizer>()
             .init_resource::<MoonlyCasterVisibility>()
             .init_resource::<hom_cache::HomFrameClock>()

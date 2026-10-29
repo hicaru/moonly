@@ -7,6 +7,20 @@ pub(crate) const VIS_DELAY_MAX_EXCLUSIVE: u32 = 25;
 pub(crate) const HOM_HIDDEN_RETEST_FRAMES: u32 = 1;
 const HOM_JITTER_SEED: u64 = 0x484f_4d5f_4d4f_4f4e;
 
+/// Enables deterministic temporal HOM caches for diagnostics and comparison.
+#[derive(Resource, Debug, Clone, Copy, Reflect)]
+#[reflect(Resource)]
+pub struct MoonlyHomCacheConfig {
+    /// Reuse triangle rejection and visibility results between updates.
+    pub enabled: bool,
+}
+
+impl Default for MoonlyHomCacheConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 #[derive(Resource, Debug, Default)]
 pub(crate) struct HomFrameClock(pub(crate) u32);
 

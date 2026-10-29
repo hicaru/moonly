@@ -43,6 +43,7 @@ fn rasterized_wall_hides_only_geometry_behind_it() {
 fn multiple_views_share_one_clock_tick_and_triangle_schedules() {
     let mut app = App::new();
     app.init_resource::<MoonlyConfig>()
+        .init_resource::<MoonlyHomCacheConfig>()
         .init_resource::<MoonlyHomGeometry>()
         .init_resource::<HomFrameClock>()
         .init_resource::<HomTriangleSkipCache>()

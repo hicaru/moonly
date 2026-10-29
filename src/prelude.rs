@@ -9,8 +9,8 @@ pub use moonly_core::{
     VolumetricLightSettings, VolumetricQualityConfig, VolumetricSchedule, WeatherEnvironment,
 };
 pub use moonly_cull::{
-    LightVisibilityState, MoonlyCullPlugin, MoonlyHomDiagnostics, MoonlyHomOccluder, MoonlyHomView,
-    OccRasterizer, OccTestRect, SmapVisPhase, SmapVisTracker,
+    LightVisibilityState, MoonlyCullPlugin, MoonlyHomCacheConfig, MoonlyHomDiagnostics,
+    MoonlyHomOccluder, MoonlyHomView, OccRasterizer, OccTestRect, SmapVisPhase, SmapVisTracker,
 };
 pub use moonly_gi::{
     AmbientOcclusionSettings, GiLightCache, GiLightField, GiRayGeometry, GiRayHit, GiRayQuery,
