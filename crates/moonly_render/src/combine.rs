@@ -126,6 +126,7 @@ pub(crate) fn init_combine_pipeline(
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_2d(TextureSampleType::Float { filterable: false }),
+                texture_2d(TextureSampleType::Float { filterable: false }),
             ),
         ),
     );
@@ -202,6 +203,14 @@ pub(crate) fn prepare_combine_bind_groups(
         let Some(shadow_depth) = shadow.first_depth() else {
             continue;
         };
+        let Some(transmittance) = shadow
+            .batches
+            .first()
+            .and_then(|batch| batch.transmittance.as_ref())
+            .map(|attachment| &attachment.texture.default_view)
+        else {
+            continue;
+        };
         let depth = targets
             .depth
             .depth_stencil_views()
@@ -235,6 +244,7 @@ pub(crate) fn prepare_combine_bind_groups(
                 &targets.local_volumetrics.texture.default_view,
                 &targets.froxel.texture.default_view,
                 &targets.emissive.texture.default_view,
+                transmittance,
             )),
         );
         commands

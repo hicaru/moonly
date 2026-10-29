@@ -10,6 +10,7 @@
 @group(0) @binding(9) var local_volumetric_texture: texture_2d<f32>;
 @group(0) @binding(10) var froxel_texture: texture_2d<f32>;
 @group(0) @binding(11) var emissive_texture: texture_2d<f32>;
+@group(0) @binding(12) var transmittance_atlas: texture_2d<f32>;
 
 struct MoonlyEnvironmentUniform {
     ambient: vec4<f32>,
@@ -71,6 +72,9 @@ fn apply_froxel(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dimensions = vec2<f32>(textureDimensions(position_texture));
     let pixel = vec2<i32>(in.uv * dimensions);
+    if constants::MOONLY_DEBUG_VIEW == 9u {
+        return textureLoad(transmittance_atlas, pixel, 0);
+    }
     let position = textureLoad(position_texture, pixel, 0);
     if position.w < 0.5 {
         if constants::MOONLY_OVERLAY == 1u {

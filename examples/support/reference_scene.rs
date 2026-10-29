@@ -274,6 +274,7 @@ pub(crate) fn debug_view_from_args() -> MoonlyDebugView {
         6 => MoonlyDebugView::ShadowAtlas,
         7 => MoonlyDebugView::AmbientOcclusion,
         8 => MoonlyDebugView::Volumetrics,
+        9 => MoonlyDebugView::TransmittanceAtlas,
         _ => MoonlyDebugView::Final,
     }
 }

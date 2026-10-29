@@ -145,6 +145,8 @@ pub enum MoonlyDebugView {
     AmbientOcclusion,
     /// Volumetric lighting.
     Volumetrics,
+    /// Local shadow transmittance atlas.
+    TransmittanceAtlas,
 }
 
 impl MoonlyDebugView {
@@ -160,6 +162,7 @@ impl MoonlyDebugView {
             Self::ShadowAtlas => 6,
             Self::AmbientOcclusion => 7,
             Self::Volumetrics => 8,
+            Self::TransmittanceAtlas => 9,
         }
     }
 }
