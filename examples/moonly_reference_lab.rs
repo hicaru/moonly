@@ -84,6 +84,7 @@ fn main() -> AppExit {
                 exercise_view_lifecycle,
                 move_caster,
                 move_cascade_camera,
+                move_volumetric_camera,
                 report_exposure_probe,
                 report_gpu_probe,
                 report_hom_probe,
@@ -182,6 +183,21 @@ fn spawn_moonly_camera(commands: &mut Commands, debug_view: MoonlyDebugView) {
     ));
     if std::env::args().any(|arg| arg == "--linear") {
         camera.insert(MoonlyLinearOutput);
+    }
+}
+
+fn move_volumetric_camera(
+    mut cameras: Query<&mut Transform, With<MoonlyCamera>>,
+    mut frame: Local<u32>,
+) {
+    if !std::env::args().any(|arg| arg == "--vol-path") {
+        return;
+    }
+    *frame += 1;
+    let progress = (*frame as f32 / 120.0).clamp(0.0, 1.0);
+    for mut transform in &mut cameras {
+        transform.translation = Vec3::new(5.5, 4.5, 12.0 - progress * 7.0);
+        transform.look_at(Vec3::new(0.0, 0.8, 0.0), Vec3::Y);
     }
 }
 
