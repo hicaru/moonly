@@ -35,6 +35,7 @@ pub enum MoonlyRenderSystems {
     MainPass,
     PostProcess,
     Ui,
+    FinalOutput,
 }
 
 pub(crate) fn base_schedule() -> Schedule {
@@ -52,6 +53,7 @@ pub(crate) fn base_schedule() -> Schedule {
             MoonlyRenderSystems::MainPass,
             MoonlyRenderSystems::PostProcess,
             MoonlyRenderSystems::Ui,
+            MoonlyRenderSystems::FinalOutput,
         )
             .chain(),
     );
@@ -114,6 +116,7 @@ pub(crate) fn render_gbuffer(
     pass.set_stencil_reference(1);
     if let Some(viewport) =
         Viewport::from_viewport_and_override(camera.viewport.as_ref(), resolution_override)
+            .map(crate::view_targets::private_viewport)
     {
         pass.set_camera_viewport(&viewport);
     }

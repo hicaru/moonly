@@ -123,7 +123,10 @@ fn native_batch_eligible(package: &LightPackage, has_virtual: bool) -> bool {
             .iter()
             .chain(&package.v_spot)
             .chain(&package.v_shadowed)
-            .all(|light| light.flags.contains(MoonlyLightFlags::NATIVE))
+            .all(|light| {
+                light.flags.contains(MoonlyLightFlags::NATIVE)
+                    && !light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
+            })
 }
 
 pub(crate) fn prepare_native_local(
@@ -279,5 +282,16 @@ mod tests {
         package.push(MoonlyLight::default());
         assert!(!native_batch_eligible(&package, false));
         assert!(!native_batch_eligible(&LightPackage::default(), false));
+    }
+
+    #[test]
+    fn batch_rejects_native_volumetric_lights() {
+        let mut package = LightPackage::default();
+        package.push(MoonlyLight {
+            light_type: MoonlyLightType::Spot,
+            flags: MoonlyLightFlags(MoonlyLightFlags::NATIVE.0 | MoonlyLightFlags::VOLUMETRIC.0),
+            ..MoonlyLight::default()
+        });
+        assert!(!native_batch_eligible(&package, false));
     }
 }

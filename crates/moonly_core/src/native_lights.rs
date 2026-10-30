@@ -1,5 +1,5 @@
 use bevy::{
-    light::PointLightShadowMap,
+    light::{PointLightShadowMap, VolumetricLight},
     prelude::*,
     render::{RenderApp, extract_resource::ExtractResource},
 };
@@ -52,13 +52,25 @@ impl ExtractResource<RenderApp> for MoonlyNativeForward {
 #[reflect(Component)]
 pub(crate) struct MoonlyNativeLight;
 
+type NativeLightQuery<T> = (
+    Entity,
+    &'static T,
+    Option<&'static mut MoonlyLight>,
+    Has<MoonlyNativeLight>,
+    Has<VolumetricLight>,
+);
+
 pub(crate) fn sync_native_ambient_light(
     ambient: Option<Res<GlobalAmbientLight>>,
     native: Res<MoonlyNativeAmbient>,
     forward: Res<MoonlyNativeForward>,
+    lights: Query<&MoonlyLight>,
     mut environment: ResMut<WeatherEnvironment>,
 ) {
-    if !native.0 || forward.0 {
+    let moonly_lighting = lights
+        .iter()
+        .any(|light| !light.flags.contains(MoonlyLightFlags::NATIVE));
+    if !native.0 || forward.0 || moonly_lighting {
         return;
     }
     let (color, brightness) =
@@ -89,21 +101,16 @@ pub(crate) fn sync_native_point_lights(
     mut commands: Commands,
     shadow_map: Res<PointLightShadowMap>,
     forward: Res<MoonlyNativeForward>,
-    mut lights: Query<(
-        Entity,
-        &PointLight,
-        Option<&mut MoonlyLight>,
-        Has<MoonlyNativeLight>,
-    )>,
+    mut lights: Query<NativeLightQuery<PointLight>>,
 ) {
     if forward.0 {
         return;
     }
-    for (entity, native, current, managed) in &mut lights {
+    for (entity, native, current, managed, volumetric) in &mut lights {
         if current.is_some() && !managed {
             continue;
         }
-        let adapted = adapt_point(native, &shadow_map);
+        let adapted = adapt_point(native, &shadow_map, volumetric);
         update_or_insert(&mut commands, entity, current, adapted);
     }
 }
@@ -112,21 +119,16 @@ pub(crate) fn sync_native_spot_lights(
     mut commands: Commands,
     shadow_map: Res<PointLightShadowMap>,
     forward: Res<MoonlyNativeForward>,
-    mut lights: Query<(
-        Entity,
-        &SpotLight,
-        Option<&mut MoonlyLight>,
-        Has<MoonlyNativeLight>,
-    )>,
+    mut lights: Query<NativeLightQuery<SpotLight>>,
 ) {
     if forward.0 {
         return;
     }
-    for (entity, native, current, managed) in &mut lights {
+    for (entity, native, current, managed, volumetric) in &mut lights {
         if current.is_some() && !managed {
             continue;
         }
-        let adapted = adapt_spot(native, &shadow_map);
+        let adapted = adapt_spot(native, &shadow_map, volumetric);
         update_or_insert(&mut commands, entity, current, adapted);
     }
 }
@@ -134,21 +136,16 @@ pub(crate) fn sync_native_spot_lights(
 pub(crate) fn sync_native_directional_lights(
     mut commands: Commands,
     forward: Res<MoonlyNativeForward>,
-    mut lights: Query<(
-        Entity,
-        &DirectionalLight,
-        Option<&mut MoonlyLight>,
-        Has<MoonlyNativeLight>,
-    )>,
+    mut lights: Query<NativeLightQuery<DirectionalLight>>,
 ) {
     if forward.0 {
         return;
     }
-    for (entity, native, current, managed) in &mut lights {
+    for (entity, native, current, managed, volumetric) in &mut lights {
         if current.is_some() && !managed {
             continue;
         }
-        let adapted = adapt_directional(native);
+        let adapted = adapt_directional(native, volumetric);
         update_or_insert(&mut commands, entity, current, adapted);
     }
 }
@@ -168,10 +165,14 @@ fn update_or_insert(
     commands.entity(entity).insert((adapted, MoonlyNativeLight));
 }
 
-fn adapt_point(light: &PointLight, shadow_map: &PointLightShadowMap) -> MoonlyLight {
+fn adapt_point(
+    light: &PointLight,
+    shadow_map: &PointLightShadowMap,
+    volumetric: bool,
+) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Point,
-        flags: native_flags(light.shadow_maps_enabled),
+        flags: native_flags(light.shadow_maps_enabled, volumetric),
         color: linear_color(light.color, light.intensity / FULL_SPHERE_STERADIANS),
         range: light.range,
         shadow_near_z: light.shadow_map_near_z,
@@ -180,10 +181,14 @@ fn adapt_point(light: &PointLight, shadow_map: &PointLightShadowMap) -> MoonlyLi
     }
 }
 
-fn adapt_spot(light: &SpotLight, shadow_map: &PointLightShadowMap) -> MoonlyLight {
+fn adapt_spot(
+    light: &SpotLight,
+    shadow_map: &PointLightShadowMap,
+    volumetric: bool,
+) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Spot,
-        flags: native_flags(light.shadow_maps_enabled),
+        flags: native_flags(light.shadow_maps_enabled, volumetric),
         color: linear_color(light.color, light.intensity / FULL_SPHERE_STERADIANS),
         range: light.range,
         cone_angle: light.outer_angle * 2.0,
@@ -194,19 +199,22 @@ fn adapt_spot(light: &SpotLight, shadow_map: &PointLightShadowMap) -> MoonlyLigh
     }
 }
 
-fn adapt_directional(light: &DirectionalLight) -> MoonlyLight {
+fn adapt_directional(light: &DirectionalLight, volumetric: bool) -> MoonlyLight {
     MoonlyLight {
         light_type: MoonlyLightType::Direct,
-        flags: native_flags(light.shadow_maps_enabled),
+        flags: native_flags(light.shadow_maps_enabled, volumetric),
         color: linear_color(light.color, light.illuminance),
         ..MoonlyLight::default()
     }
 }
 
-const fn native_flags(shadows: bool) -> MoonlyLightFlags {
+const fn native_flags(shadows: bool, volumetric: bool) -> MoonlyLightFlags {
     let mut flags = MoonlyLightFlags::NATIVE;
     if shadows {
         flags = flags.union(MoonlyLightFlags::SHADOW);
+    }
+    if volumetric {
+        flags = flags.union(MoonlyLightFlags::VOLUMETRIC);
     }
     flags
 }

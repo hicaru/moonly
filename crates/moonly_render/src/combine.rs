@@ -1,3 +1,8 @@
+use crate::{
+    camera::{MoonlyCamera, MoonlyCameraRole, MoonlyDebugView},
+    shadow_targets::MoonlySpotShadowTarget,
+    view_targets::MoonlyViewTargets,
+};
 use bevy::{
     asset::{AssetServer, Handle, load_embedded_asset},
     core_pipeline::FullscreenShader,
@@ -15,20 +20,13 @@ use bevy::{
             binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
-        view::{ExtractedView, ViewTarget},
+        view::ExtractedView,
     },
     shader::{Shader, ShaderDefVal},
 };
 use moonly_core::{
     AmbientOcclusionMode, AmbientOcclusionSettings, MoonlyConfig, WeatherEnvironment,
 };
-
-use crate::{
-    camera::{MoonlyCamera, MoonlyCameraRole, MoonlyDebugView},
-    shadow_targets::MoonlySpotShadowTarget,
-    view_targets::MoonlyViewTargets,
-};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct MoonlyCombineKey {
     format: TextureFormat,
@@ -66,7 +64,7 @@ impl MoonlyEnvironmentUniform {
         clip_from_world: Mat4,
         inputs: &CombinePrepareInputs,
         view_position: Vec3,
-        exposure: f32,
+        camera_exposure: f32,
     ) -> Self {
         let mode = match inputs.config.ao_mode {
             AmbientOcclusionMode::Off => 0.0,
@@ -76,7 +74,7 @@ impl MoonlyEnvironmentUniform {
             AmbientOcclusionMode::EnhancedSsdo => 4.0,
         };
         Self {
-            ambient: environment.ambient_color.extend(exposure),
+            ambient: environment.ambient_color.extend(camera_exposure),
             hemi: environment.hemi_color,
             fog_color: environment.fog_color.extend(1.0),
             fog_plane: environment.fog_plane_for_view(clip_from_world),
@@ -86,7 +84,11 @@ impl MoonlyEnvironmentUniform {
                 environment.fog_density,
                 environment.fog_height_falloff,
                 environment.fog_height_reference,
-                if inputs.native.0 { 1.0 } else { 0.0 },
+                if inputs.native.0 && !inputs.lights.has_non_native() {
+                    1.0
+                } else {
+                    0.0
+                },
             ),
         }
     }
@@ -102,6 +104,7 @@ pub(crate) struct CombinePrepareInputs<'w> {
     config: Res<'w, MoonlyConfig>,
     ao_settings: Res<'w, AmbientOcclusionSettings>,
     native: Res<'w, moonly_core::MoonlyNativeAmbient>,
+    lights: Res<'w, moonly_core::LightPackage>,
 }
 
 pub(crate) fn init_combine_pipeline(
@@ -187,9 +190,9 @@ type CombineViewQuery<'w, 's> = Query<
     (
         Entity,
         &'static ExtractedView,
+        &'static ExtractedCamera,
         &'static MoonlyViewTargets,
         &'static MoonlySpotShadowTarget,
-        &'static crate::settings::MoonlyExposure,
     ),
     With<MoonlyCamera>,
 >;
@@ -199,7 +202,7 @@ pub(crate) fn prepare_combine_bind_groups(
     inputs: CombinePrepareInputs,
     views: CombineViewQuery,
 ) {
-    for (entity, view, targets, shadow, exposure) in &views {
+    for (entity, view, camera, targets, shadow) in &views {
         let Some(shadow_depth) = shadow.first_depth() else {
             continue;
         };
@@ -222,7 +225,7 @@ pub(crate) fn prepare_combine_bind_groups(
             clip_from_world,
             &inputs,
             view.world_from_view.translation(),
-            exposure.0,
+            camera.exposure,
         );
         let mut environment = UniformBuffer::from(environment_data);
         environment.write_buffer(&inputs.device, &inputs.queue);
@@ -257,7 +260,7 @@ pub(crate) fn render_combine(
     view: ViewQuery<
         (
             &ExtractedCamera,
-            &ViewTarget,
+            &MoonlyViewTargets,
             &ViewCombinePipeline,
             &ViewCombineBindGroup,
         ),
@@ -267,11 +270,11 @@ pub(crate) fn render_combine(
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,
     mut context: RenderContext,
 ) {
-    let (camera, target, pipeline_id, bind_group) = view.into_inner();
+    let (camera, targets, pipeline_id, bind_group) = view.into_inner();
     let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) else {
         return;
     };
-    let attachments = [Some(target.get_unsampled_color_attachment())];
+    let attachments = [Some(targets.scene.get_unsampled_attachment())];
     let diagnostics = context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {
@@ -283,8 +286,12 @@ pub(crate) fn render_combine(
         multiview_mask: None,
     });
     let span = diagnostics.pass_span(&mut pass, "moonly_combine");
-    if let Some(viewport) = &camera.viewport {
-        pass.set_camera_viewport(viewport);
+    if let Some(viewport) = camera
+        .viewport
+        .clone()
+        .map(crate::view_targets::private_viewport)
+    {
+        pass.set_camera_viewport(&viewport);
     }
     pass.set_render_pipeline(pipeline);
     pass.set_bind_group(0, &bind_group.0, &[]);

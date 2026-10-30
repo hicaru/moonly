@@ -14,6 +14,7 @@ pub(crate) struct NativeBuildScratch {
     pub(crate) bounds: Vec<ProjectionBounds>,
     pub(crate) tiles: Vec<NativeTile>,
     pub(crate) indices: Vec<u32>,
+    offsets: Vec<u32>,
 }
 
 #[derive(ShaderType, Default, Clone, Copy)]
@@ -117,26 +118,49 @@ pub(crate) fn build(view: &ExtractedView, scratch: &mut NativeBuildScratch) -> U
     let count = grid.x.saturating_mul(grid.y) as usize;
     scratch.tiles.clear();
     scratch.tiles.resize(count, NativeTile::default());
-    scratch.indices.clear();
-    for (index, bounds) in scratch.bounds.iter().copied().enumerate() {
+    for bounds in scratch.bounds.iter().copied() {
         let (min, max) = tile_rect(bounds, grid);
         for y in min.y..=max.y {
             for x in min.x..=max.x {
-                let index_in_grid = (y * grid.x + x) as usize;
-                let Some(tile) = scratch.tiles.get_mut(index_in_grid) else {
-                    continue;
-                };
-                tile.count = tile.count.saturating_add(1);
-                scratch.indices.push(index as u32);
+                let index = (y * grid.x + x) as usize;
+                if let Some(tile) = scratch.tiles.get_mut(index) {
+                    tile.count = tile.count.saturating_add(1);
+                }
             }
         }
     }
-    let mut offset = 0_u32;
+    let mut total = 0_u32;
+    scratch.offsets.clear();
     for tile in &mut scratch.tiles {
-        tile.offset = offset;
-        offset = offset.saturating_add(tile.count);
+        tile.offset = total;
+        scratch.offsets.push(total);
+        total = total.saturating_add(tile.count);
+    }
+    scratch.indices.clear();
+    scratch.indices.resize(total as usize, 0);
+    for light in 0..scratch.bounds.len() {
+        let Some(bounds) = scratch.bounds.get(light).copied() else {
+            continue;
+        };
+        let (min, max) = tile_rect(bounds, grid);
+        for y in min.y..=max.y {
+            for x in min.x..=max.x {
+                let index = (y * grid.x + x) as usize;
+                write_light_index(scratch, index, light as u32);
+            }
+        }
     }
     UVec4::new(grid.x, grid.y, TILE_SIZE, scratch.lights.len() as u32)
+}
+
+fn write_light_index(scratch: &mut NativeBuildScratch, tile: usize, light: u32) {
+    let Some(next) = scratch.offsets.get_mut(tile) else {
+        return;
+    };
+    if let Some(destination) = scratch.indices.get_mut(*next as usize) {
+        *destination = light;
+    }
+    *next = next.saturating_add(1);
 }
 
 fn tile_grid(view: &ExtractedView) -> UVec2 {
@@ -177,6 +201,35 @@ mod tests {
             tile_rect(bounds, UVec2::new(20, 12)),
             (UVec2::ZERO, UVec2::new(19, 11))
         );
+    }
+
+    #[test]
+    fn tile_indices_follow_tile_offsets_with_crossing_lights() {
+        let view = ExtractedView {
+            retained_view_entity: RetainedViewEntity::new(Entity::PLACEHOLDER.into(), None, 0),
+            clip_from_view: Mat4::IDENTITY,
+            world_from_view: GlobalTransform::IDENTITY,
+            clip_from_world: None,
+            target_format: TextureFormat::Rgba16Float,
+            viewport: UVec4::new(0, 0, 128, 64),
+            color_grading: bevy::render::view::ColorGrading::default(),
+            invert_culling: false,
+        };
+        let mut scratch = NativeBuildScratch::default();
+        scratch.bounds.push(ProjectionBounds {
+            min: Vec2::splat(-1.0),
+            max: Vec2::splat(1.0),
+            full: false,
+        });
+        scratch.bounds.push(ProjectionBounds {
+            min: Vec2::new(-1.0, -1.0),
+            max: Vec2::new(-0.001, 1.0),
+            full: false,
+        });
+        build(&view, &mut scratch);
+        assert_eq!(scratch.tiles.first().map(|tile| tile.count), Some(2));
+        assert_eq!(scratch.tiles.get(1).map(|tile| tile.count), Some(1));
+        assert_eq!(scratch.indices.get(0..3), Some(&[0, 1, 0][..]));
     }
 
     #[test]

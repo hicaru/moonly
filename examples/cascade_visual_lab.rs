@@ -17,7 +17,7 @@ use moonly_core::{
 use moonly_cull::MoonlyCullPlugin;
 use moonly_gi::MoonlyGiPlugin;
 use moonly_post::{Hdr10PostConfig, MoonlyExposureMode};
-use moonly_render::{MoonlyCamera, MoonlyRender, MoonlyRenderPlugin};
+use moonly_render::{MoonlyCamera, MoonlyRender, MoonlyRenderPlugin, MoonlyWeatherFog};
 use moonly_shadows::MoonlyShadowsPlugin;
 use support::{
     CAPTURE_HEIGHT, CAPTURE_WIDTH, CaptureOptions, CaptureState, capture::OffscreenCapture,
@@ -262,6 +262,7 @@ fn spawn_lab_camera(commands: &mut Commands, target: RenderTarget) {
         target,
         Exposure { ev100: 0.0 },
         DistanceFog::default(),
+        MoonlyWeatherFog,
         CameraRenderGraph::new(MoonlyRender),
         CascadeLabCamera,
         Transform::from_translation(CAMERA_ORIGIN)

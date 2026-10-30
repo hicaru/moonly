@@ -14,7 +14,7 @@ use moonly_cull::MoonlyHomOccluder;
 use moonly_gi::MoonlyGiCaster;
 use moonly_render::{
     MoonlyCamera, MoonlyCameraRole, MoonlyDebugView, MoonlyLinearOutput, MoonlyRender,
-    MoonlySurface,
+    MoonlySurface, MoonlyWeatherFog,
 };
 
 use super::numeric_arg;
@@ -108,7 +108,7 @@ pub(crate) fn spawn_scene(
         camera.insert(MoonlyLinearOutput);
     }
     if std::env::args().any(|arg| arg == "--fog" || arg == "--fog-transparent") {
-        camera.insert(DistanceFog::default());
+        camera.insert((DistanceFog::default(), MoonlyWeatherFog));
     }
     spawn_overlay_camera(&mut commands);
 }

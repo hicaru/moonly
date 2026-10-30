@@ -52,7 +52,10 @@ fn forward_attenuation(light: MoonlyForwardLight, distance_to_light: f32) -> f32
         return attenuation * attenuation;
     }
     let distance_squared = distance_to_light * distance_to_light;
-    let inverse_range_squared = 1.0 / max(light.position_range.w * light.position_range.w, 0.0001);
+    let inverse_range_squared = 1.0 / max(
+        light.position_range.w * light.position_range.w,
+        0.0001,
+    );
     let factor = distance_squared * inverse_range_squared;
     let smooth_factor = clamp(1.0 - factor * factor, 0.0, 1.0);
     return smooth_factor * smooth_factor / max(distance_squared, 0.0001);

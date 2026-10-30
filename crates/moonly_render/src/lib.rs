@@ -30,6 +30,7 @@ mod mesh_bounds;
 mod mesh_pipeline;
 mod minmax;
 mod motion_vectors;
+mod native_post;
 mod occlusion;
 mod occlusion_state;
 pub mod phase;
@@ -53,6 +54,7 @@ mod sun_accumulate;
 mod sun_shadow;
 mod surface;
 mod transmission;
+mod ui;
 mod view_targets;
 mod visibility;
 mod volumetrics;
@@ -74,6 +76,7 @@ pub use camera::{
 };
 pub use caster_visibility::MoonlyCasterVisibility;
 pub use diagnostics::{GpuTiming, MoonlyGpuDiagnostics, MoonlyPass};
+pub use fog_camera::MoonlyWeatherFog;
 pub use forward_layout::{moonly_forward_layout, moonly_forward_layout_for};
 pub use forward_lighting::{MoonlyForwardView, SetMoonlyForwardBindGroup};
 pub use graph::{MoonlyRender, MoonlyRenderSystems};
@@ -106,6 +109,7 @@ impl Plugin for MoonlyRenderPlugin {
             .register_type::<MoonlyDebugView>()
             .register_type::<MoonlyExternalFog>()
             .register_type::<MoonlyLinearOutput>()
+            .register_type::<MoonlyWeatherFog>()
             .register_type::<MoonlyPostSettings>()
             .register_type::<MoonlySurface>()
             .init_resource::<MoonlyGpuDiagnostics>()

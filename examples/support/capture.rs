@@ -55,11 +55,23 @@ pub(crate) struct CaptureState {
     shutdown_frames: u8,
 }
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub(crate) struct CaptureGate {
+    pub(crate) ready: bool,
+}
+
+impl Default for CaptureGate {
+    fn default() -> Self {
+        Self { ready: true }
+    }
+}
+
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct CaptureExit<'w, 's> {
     exit: MessageWriter<'w, AppExit>,
     close: MessageWriter<'w, bevy::window::WindowCloseRequested>,
     windows: Query<'w, 's, Entity, With<Window>>,
+    gate: Option<Res<'w, CaptureGate>>,
 }
 
 pub(crate) fn capture_system(
@@ -69,6 +81,9 @@ pub(crate) fn capture_system(
     mut exit: CaptureExit,
     mut frame: Local<u32>,
 ) {
+    if exit.gate.as_ref().is_some_and(|gate| !gate.ready) {
+        return;
+    }
     *frame += 1;
     if state.failed {
         exit.exit.write(AppExit::error());

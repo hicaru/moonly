@@ -27,8 +27,9 @@ pub use moonly_render::{
     GpuTiming, MoonlyCamera, MoonlyCameraRole, MoonlyCasterVisibility, MoonlyDebugView,
     MoonlyExternalFog, MoonlyForwardView, MoonlyGpuDiagnostics, MoonlyLinearOutput,
     MoonlyMaterialAdapters, MoonlyMaterialLut, MoonlyPass, MoonlyPostSettings, MoonlyRender,
-    MoonlyRenderPlugin, MoonlyRenderSystems, MoonlySurface, SetMoonlyForwardBindGroup,
-    generate_moonly_material_lut, moonly_forward_layout, moonly_forward_layout_for,
+    MoonlyRenderPlugin, MoonlyRenderSystems, MoonlySurface, MoonlyWeatherFog,
+    SetMoonlyForwardBindGroup, generate_moonly_material_lut, moonly_forward_layout,
+    moonly_forward_layout_for,
 };
 pub use moonly_shadows::{
     CameraFrustumParams, LocalShadowBatch, LocalShadowBatches, LocalShadowView,
@@ -41,3 +42,6 @@ pub use moonly_volumetrics::{
 };
 
 pub use crate::MoonlyPlugin;
+pub use crate::bevy_compat::{
+    MoonlyBevyCompatOptOut, MoonlyBevyCompatPlugin, MoonlyBevyCompatWarnings,
+};

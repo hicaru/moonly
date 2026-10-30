@@ -6,7 +6,9 @@ use bevy::{
 };
 use moonly_core::{MoonlyLight, MoonlyLightFlags, MoonlyLightType};
 use moonly_gi::MoonlyGlow;
-use moonly_render::{MoonlyCamera, MoonlyCameraRole, MoonlyLinearOutput, MoonlyRender};
+use moonly_render::{
+    MoonlyCamera, MoonlyCameraRole, MoonlyLinearOutput, MoonlyRender, MoonlyWeatherFog,
+};
 
 use super::{
     CAPTURE_HEIGHT, CAPTURE_WIDTH,
@@ -61,7 +63,7 @@ pub(crate) fn setup_offscreen_capture(
         camera.insert(MoonlyLinearOutput);
     }
     if std::env::args().any(|arg| arg == "--fog" || arg == "--fog-transparent") {
-        camera.insert(DistanceFog::default());
+        camera.insert((DistanceFog::default(), MoonlyWeatherFog));
     }
     if std::env::args().any(|arg| arg == "--overlay") {
         commands.spawn((

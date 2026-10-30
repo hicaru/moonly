@@ -1,4 +1,5 @@
 use bevy::{
+    camera::Viewport,
     color::LinearRgba,
     prelude::*,
     render::{
@@ -17,6 +18,11 @@ pub(crate) const GBUFFER_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 pub(crate) const GBUFFER_DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32FloatStencil8;
 pub(crate) const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 
+pub(crate) const fn private_viewport(mut viewport: Viewport) -> Viewport {
+    viewport.physical_position = UVec2::ZERO;
+    viewport
+}
+
 #[derive(Component)]
 pub(crate) struct MoonlyViewTargets {
     pub position: ColorAttachment,
@@ -24,6 +30,8 @@ pub(crate) struct MoonlyViewTargets {
     pub albedo_gloss: ColorAttachment,
     pub accumulator: ColorAttachment,
     pub emissive: ColorAttachment,
+    pub scene: ColorAttachment,
+    pub post_process: ColorAttachment,
     pub volumetrics: ColorAttachment,
     pub local_volumetrics: ColorAttachment,
     pub froxel: ColorAttachment,
@@ -62,6 +70,18 @@ fn create_targets(
     let albedo_gloss = color_target(device, cache, size, "moonly_albedo_gloss");
     let accumulator = color_target(device, cache, size, "moonly_accumulator");
     let emissive = color_target(device, cache, size, "moonly_emissive");
+    let scene_texture = cache.get(
+        device,
+        TextureDescriptor {
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC
+                | TextureUsages::COPY_DST,
+            ..texture_descriptor(size, GBUFFER_FORMAT, "moonly_scene")
+        },
+    );
+    let scene = ColorAttachment::new(scene_texture, None, None, Some(LinearRgba::NONE.into()));
+    let post_process = color_target(device, cache, size, "moonly_post_process");
     let volumetrics = color_target(device, cache, size, "moonly_volumetrics");
     let local_volumetrics = color_target(
         device,
@@ -103,6 +123,8 @@ fn create_targets(
         albedo_gloss,
         accumulator,
         emissive,
+        scene,
+        post_process,
         volumetrics,
         local_volumetrics,
         froxel,

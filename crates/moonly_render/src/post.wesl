@@ -1,4 +1,4 @@
-import moonly_post::tonemap::{evaluate_hdr10_tonemap, encode_st2084_pq};
+import moonly_post::tonemap::evaluate_hdr10_tonemap;
 import moonly_post::bloom_optics::{
     apply_heat_vision_wesl,
     apply_night_vision_wesl,
@@ -84,15 +84,6 @@ fn vignette(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     return color * (1.0 - post.display.y * edge);
 }
 
-fn hdr10_output(color: vec3<f32>) -> vec3<f32> {
-    let rec2020 = mat3x3<f32>(
-        vec3<f32>(0.6274, 0.0691, 0.0164),
-        vec3<f32>(0.3293, 0.9195, 0.0880),
-        vec3<f32>(0.0433, 0.0113, 0.8956),
-    ) * color;
-    return encode_st2084_pq(rec2020, post.display.x);
-}
-
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dimensions = vec2<i32>(textureDimensions(scene_texture));
@@ -111,9 +102,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     color = mix(vec3(luma), color, post.exposure.z);
     color = vignette(optics(color_grade(color), in.uv), in.uv);
-    @if(MOONLY_HDR10) {
-        color = hdr10_output(color);
-    }
     let coverage = textureLoad(scene_texture, pixel, 0).a;
     return vec4(color, coverage);
 }

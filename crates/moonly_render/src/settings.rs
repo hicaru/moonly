@@ -13,6 +13,8 @@ pub struct MoonlyPostSettings {
     pub operator: TonemapOperator,
     /// Exposure source for this camera.
     pub exposure_mode: moonly_post::MoonlyExposureMode,
+    /// Use the native Bevy tonemapping pass for this camera.
+    pub native_post: bool,
     /// Contrast offset around the middle-gray pivot.
     pub contrast: f32,
     /// Saturation multiplier after tonemapping.
@@ -55,6 +57,7 @@ impl MoonlyPostSettings {
         Self {
             operator: config.operator,
             exposure_mode: config.exposure_mode,
+            native_post: false,
             contrast: config.contrast,
             saturation: 1.0 + config.vibrance,
             grading_exposure: 0.0,
@@ -120,6 +123,7 @@ impl ExtractComponent<RenderApp> for MoonlyExposure {
 
 pub(crate) fn configure_view_exposure(
     config: Option<Res<Hdr10PostConfig>>,
+    native_post: Option<Res<moonly_core::MoonlyNativePost>>,
     mut cameras: Query<
         (
             &mut bevy::render::camera::ExtractedCamera,
@@ -131,12 +135,25 @@ pub(crate) fn configure_view_exposure(
     let Some(config) = config else {
         return;
     };
-    let legacy_exposure = bevy::camera::Exposure::default().exposure();
     for (mut camera, settings) in &mut cameras {
         let mode = settings.map_or(config.exposure_mode, |settings| settings.exposure_mode);
-        if mode == moonly_post::MoonlyExposureMode::LuminanceAdaptation {
-            camera.exposure = legacy_exposure;
-        }
+        let native_post = native_post.as_ref().is_some_and(|resource| resource.0)
+            || settings.is_some_and(|settings| settings.native_post);
+        camera.exposure = material_exposure(mode, native_post, camera.exposure);
+    }
+}
+
+fn material_exposure(
+    mode: moonly_post::MoonlyExposureMode,
+    native_post: bool,
+    camera_exposure: f32,
+) -> f32 {
+    if !native_post {
+        1.0
+    } else if mode == moonly_post::MoonlyExposureMode::LuminanceAdaptation {
+        bevy::camera::Exposure::default().exposure()
+    } else {
+        camera_exposure
     }
 }
 
@@ -161,5 +178,16 @@ mod tests {
         settings.exposure_mode = moonly_post::MoonlyExposureMode::Camera;
         let manual = settings.exposure(0.37, &config, &adaptation);
         assert!((manual - 0.37).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn moonly_post_owns_material_exposure() {
+        let legacy = bevy::camera::Exposure::default().exposure();
+        let camera = moonly_post::MoonlyExposureMode::Camera;
+        let automatic = moonly_post::MoonlyExposureMode::LuminanceAdaptation;
+        assert_eq!(material_exposure(camera, false, 7.0), 1.0);
+        assert_eq!(material_exposure(automatic, false, 7.0), 1.0);
+        assert_eq!(material_exposure(automatic, true, 7.0), legacy);
+        assert_eq!(material_exposure(camera, true, 7.0), 7.0);
     }
 }

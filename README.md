@@ -2,18 +2,15 @@
 
 Moonly is a Bevy plugin for dynamic shadows, GI, occlusion, volumetrics, and HDR post-processing.
 
-This guide covers the current API. It uses sibling `moonly` and `bevy` directories.
+This guide covers the current API.
 
 ## 1. Requirements
 
-Use the Bevy 0.20 development fork on the `lights` branch.
+Use vanilla Bevy 0.20 from crates.io. Moonly does not require a Bevy fork.
 
-The current Moonly code uses two fork features:
+Each Moonly camera owns its intermediate scene and post-process textures. Native forward uses the standard Bevy light path.
 
-- `EarlyLightCulling` skips zero-contribution lights before shadow sampling.
-- `IsolatedMainTexture` gives an overlay camera private main textures.
-
-Use one Bevy source for the application and Moonly. Do not mix the fork with another Bevy package version.
+Use one Bevy package version for the application and Moonly.
 
 Check the dependency source with:
 
@@ -27,57 +24,51 @@ Add these dependencies to the application's `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy = { path = "../bevy", default-features = false, features = ["3d", "ui"] }
+bevy = { version = "0.20", default-features = false, features = ["3d", "ui"] }
 moonly = { path = "../moonly" }
 ```
 
-Change the paths if the repositories use different locations.
+Change the Moonly path if the repository uses a different location.
 
-The application can enable more Bevy features when needed. Both packages must resolve to the same Bevy source.
+The application can enable more Bevy features when needed. Both packages must resolve to the same Bevy package version.
 
-## 3. Add the full Moonly pipeline
+## 3. Add Moonly to a Bevy application
 
-Add `MoonlyPlugin` after `DefaultPlugins`.
-
-Use `MoonlyCamera` for each camera that Moonly must render.
+Add `MoonlyPlugin` after `DefaultPlugins`. Keep the existing Bevy scene code.
 
 ```rust
 use bevy::prelude::*;
-use moonly::prelude::{MoonlyCamera, MoonlyLight, MoonlyPlugin};
+use moonly::MoonlyPlugin;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(MoonlyPlugin::enhanced())
+        .add_plugins(MoonlyPlugin::default())
         .add_systems(Startup, setup)
         .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn((
-        MoonlyCamera::default(),
+        Camera3d::default(),
         Transform::from_xyz(5.5, 4.5, 7.5).looking_at(Vec3::new(0.0, 0.8, 0.0), Vec3::Y),
     ));
-
-    let position = Vec3::new(0.0, 4.6, 1.2);
     commands.spawn((
-        MoonlyLight::spot(
-            position,
-            Vec3::new(0.0, -0.95, -0.25).normalize(),
-            Vec3::new(2.8, 2.1, 1.3),
-            16.0,
-            1.25,
-        ),
-        Transform::from_translation(position),
+        PointLight {
+            intensity: 1_500.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(0.0, 4.6, 1.2),
     ));
 }
 ```
 
-Add meshes and materials that the scene needs. The camera and light snippets do not create visible geometry.
+The plugin automatically adapts `Camera3d`, native lights, `StandardMaterial`, bloom, tone mapping, and color grading. It preserves explicit `MoonlyCamera`, `MoonlyLight`, `MoonlySurface`, and `MoonlyPostSettings` components.
 
-`MoonlyCamera` adds the required camera components and selects the Moonly render graph.
+The default path uses the full Moonly renderer and R4 light attenuation. It does not replace that model with the Bevy inverse-square curve.
 
-`MoonlyLight::spot` creates a shadowed spot light with GI and volumetrics enabled.
+Add `MoonlyBevyCompatOptOut` to a `Camera3d` when that camera must keep the native Bevy render graph.
 
 ## 4. Use the native Bevy forward pipeline
 
@@ -112,7 +103,7 @@ Native forward provides these properties:
 
 - It preserves the Bevy `Core3d` graph.
 - It preserves camera HDR, MSAA, prepasses, deferred mode, fog, and anti-aliasing.
-- It enables `EarlyLightCulling` for Moonly cameras.
+- It uses the standard Bevy light evaluation path.
 - It avoids unused Moonly subsystems.
 
 This mode favors Bevy compatibility. It does **not** run the Moonly deferred renderer, Moonly GI, or Moonly custom shadows.
@@ -139,27 +130,20 @@ fn spawn_hdr_camera(commands: &mut Commands) {
 
 The full Moonly pipeline adds the HDR components that its graph requires.
 
-## 6. Configure native light adaptation
+## 6. Override native adaptation
 
-The full Moonly pipeline can adapt native Bevy lights and post settings.
+`MoonlyNativeAmbient` defaults to enabled. The plugin copies `GlobalAmbientLight` into the Moonly environment.
 
-Insert these resources before `MoonlyPlugin` and before camera creation:
-
-```rust
-app.insert_resource(MoonlyNativeAmbient(true))
-    .insert_resource(MoonlyNativePost(true));
-```
-
-Import the resources from `moonly::prelude`:
+Automatically adapted native cameras use Bevy tone mapping and native Bloom. Explicit Moonly lights and cameras keep Moonly post-processing. Insert `MoonlyNativePost(true)` before `MoonlyPlugin` to force native tone mapping for every Moonly camera.
 
 ```rust
 use moonly::prelude::{MoonlyNativeAmbient, MoonlyNativePost};
+
+app.insert_resource(MoonlyNativeAmbient(false))
+    .insert_resource(MoonlyNativePost(true));
 ```
 
-- `MoonlyNativeAmbient` copies `GlobalAmbientLight` into the Moonly environment.
-- `MoonlyNativePost` keeps native Bevy tone mapping and color grading.
-
-These options do not replace `MoonlyNativeForward`. Configure them independently.
+Explicit resource values take precedence over plugin defaults. These options do not replace `MoonlyNativeForward`.
 
 ## 7. Select a configuration preset
 
@@ -212,9 +196,9 @@ fn spawn_overlay(commands: &mut Commands) {
 }
 ```
 
-The overlay role uses `IsolatedMainTexture` from the Bevy fork. This prevents texture feedback and separates composition spaces.
+Each Moonly camera owns private intermediate scene and post-process textures. This prevents texture feedback and separates composition spaces.
 
-The world role uses the shared main texture target. This preserves the standard Moonly world pipeline.
+The overlay role composites its post-processed output over the world output. Both roles use the same isolated pipeline.
 
 ## 9. Control exposure and diagnostics
 
@@ -249,6 +233,21 @@ cargo run --example monolith_showcase
 cargo run --example lighting_stress_lab
 ```
 
+Run the original Bevy examples with Moonly compatibility injected by the build script:
+
+```bash
+cargo run --example bevy_lighting
+cargo run --example bevy_spotlight
+cargo run --example bevy_transmission
+cargo run --example bevy_bloom_3d
+cargo run --example bevy_volumetric_fog
+cargo run --example bevy_tonemapping
+cargo run --example bevy_many_lights
+cargo run --example bevy_many_cameras_lights
+```
+
+Enable the `exr` or `hdr` feature to load those formats in the tone-mapping image viewer.
+
 Run the benchmark targets with the bench profile:
 
 ```bash
@@ -262,11 +261,11 @@ Report the active profile with performance numbers. Do not use `--release` for t
 
 ### The application has duplicate Bevy types
 
-Use one Bevy path or Git source for all dependencies. Run `cargo tree -i bevy` to inspect the source.
+Use one Bevy package version for all dependencies. Run `cargo tree -i bevy` to inspect the source.
 
 ### The scene does not use Moonly
 
-Add `MoonlyCamera` to the camera. `Camera3d` alone does not select the Moonly render graph.
+Add `MoonlyPlugin` after `DefaultPlugins`. Check that the camera does not have `MoonlyBevyCompatOptOut`.
 
 ### Native forward does not activate
 
@@ -278,7 +277,7 @@ Let assets and GPU pipelines finish initialization before capture. Do not treat 
 
 ### Overlay output contains feedback or the wrong post-processing
 
-Use `MoonlyCameraRole::Overlay` with the Bevy fork. For another renderer, use a separate image target and an explicit composition pass.
+Use `MoonlyCameraRole::Overlay`. Moonly gives each camera private intermediate textures. Check that custom passes also use these textures.
 
 ### The scene needs Moonly GI and custom shadows
 
@@ -286,14 +285,26 @@ Do not use `MoonlyNativeForward`. Use the full Moonly pipeline and the required 
 
 ## 12. Vanilla Bevy 0.20 compatibility
 
-Vanilla Bevy 0.20 does not provide `EarlyLightCulling` or `IsolatedMainTexture`.
+Moonly supports vanilla Bevy 0.20 without fork-only components.
 
-The current Moonly code therefore requires adaptation before a switch to vanilla Bevy.
+Native forward omits the optional early-light optimization. The full pipeline implements texture isolation with per-camera intermediate targets.
 
-For vanilla integration:
+Keep the existing Bevy camera and light setup. Do not mix different Bevy package versions in one application.
 
-- Disable or replace the early-light optimization.
-- Use a separate image target for independent overlay post-processing.
-- Keep the core Moonly camera and lighting setup unchanged where possible.
+`MoonlyPlugin` includes all native adapters. `MoonlyBevyCompatPlugin` remains as a compatibility alias, but new applications do not need it.
 
-Do not mix vanilla Bevy types with fork Bevy types in one application.
+The plugin preserves the R4 attenuation curve. Bevy uses inverse-square attenuation, so brightness can differ. Moonly reports unsupported native post options through `MoonlyBevyCompatWarnings`.
+
+Native `Skybox`, `EnvironmentMapLight`, `VolumetricFog`, and TAA use an automatic per-camera `Core3d` fallback. Other cameras keep the Moonly pipeline. Custom `Material` types require a `MoonlyMaterialAdapters` shader.
+
+Use these environment variables for GPU captures:
+
+- `MOONLY_CAPTURE_PATH` selects the PNG path.
+- `MOONLY_CAPTURE_FRAME` selects the capture frame.
+- `MOONLY_EXIT_FRAME` selects the earliest exit frame.
+- `MOONLY_INPUT_EVENTS` schedules pulse, press, and release events. Use `20:P`, `10:+Q`, and `200:-Q`.
+- `MOONLY_DEBUG_VIEW` selects a raw G-buffer view. Use `scene` for linear combined output.
+- `MOONLY_MAX_QUALITY=1` selects the enhanced 8192 atlas, 64-photon GI, and 256-slice volumetrics in generated Bevy examples.
+- `MOONLY_VANILLA=1` selects the native Bevy forward and post path in generated Bevy examples.
+
+The capture system waits for GPU pipeline compilation. It also waits for the PNG write before exit.

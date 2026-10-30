@@ -14,7 +14,7 @@ use bevy::{
 };
 
 #[allow(unused_imports)]
-pub(crate) use capture::{CaptureOptions, CaptureState, capture_system};
+pub(crate) use capture::{CaptureGate, CaptureOptions, CaptureState, capture_system};
 
 pub(crate) const CAPTURE_WIDTH: u32 = 1280;
 pub(crate) const CAPTURE_HEIGHT: u32 = 720;

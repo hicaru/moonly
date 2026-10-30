@@ -14,15 +14,14 @@ use bevy::{
             binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
-        view::ViewTarget,
     },
-    shader::{Shader, ShaderDefVal},
+    shader::Shader,
 };
 use moonly_post::{Hdr10PostConfig, OpticsMode};
 
 use crate::{
-    camera::{MoonlyCamera, MoonlyCameraRole, MoonlyLinearOutput},
-    view_targets::MoonlyViewTargets,
+    camera::{MoonlyCamera, MoonlyLinearOutput},
+    view_targets::{GBUFFER_FORMAT, MoonlyViewTargets},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -128,10 +127,6 @@ impl SpecializedRenderPipeline for MoonlyPostPipeline {
             vertex: self.fullscreen.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
-                shader_defs: vec![ShaderDefVal::Bool(
-                    "MOONLY_HDR10".into(),
-                    key.format == TextureFormat::Rgb10a2Unorm,
-                )],
                 targets: vec![Some(ColorTargetState {
                     format: key.format,
                     blend: key.overlay.then_some(BlendState::ALPHA_BLENDING),
@@ -149,15 +144,12 @@ pub(crate) fn prepare_post_pipelines(
     cache: Res<PipelineCache>,
     pipeline: Res<MoonlyPostPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<MoonlyPostPipeline>>,
-    views: Query<(Entity, &MoonlyCamera, &ViewTarget)>,
+    views: Query<Entity, With<MoonlyCamera>>,
 ) {
-    for (entity, camera, target) in &views {
-        let Some(format) = target.out_texture_view_format() else {
-            continue;
-        };
+    for entity in &views {
         let key = MoonlyPostKey {
-            format,
-            overlay: camera.role == MoonlyCameraRole::Overlay,
+            format: GBUFFER_FORMAT,
+            overlay: false,
         };
         let id = pipelines.specialize(&cache, &pipeline, key);
         commands.entity(entity).insert(ViewPostPipeline(id));
@@ -179,7 +171,6 @@ type PostView = (
     Entity,
     &'static crate::settings::MoonlyExposure,
     &'static MoonlyViewTargets,
-    &'static ViewTarget,
     Option<&'static MoonlyLinearOutput>,
     Option<&'static crate::MoonlyPostSettings>,
 );
@@ -189,7 +180,7 @@ pub(crate) fn prepare_post_bind_groups(
     inputs: PostPrepareInputs,
     views: Query<PostView, With<MoonlyCamera>>,
 ) {
-    for (entity, camera, targets, target, linear, settings) in &views {
+    for (entity, camera, targets, linear, settings) in &views {
         let settings = settings
             .copied()
             .unwrap_or_else(|| crate::MoonlyPostSettings::from_config(&inputs.config));
@@ -206,7 +197,7 @@ pub(crate) fn prepare_post_bind_groups(
             Some("moonly_post_bind_group"),
             &inputs.cache.get_bind_group_layout(&inputs.pipeline.layout),
             &BindGroupEntries::sequential((
-                target.main_texture_view(),
+                &targets.scene.texture.default_view,
                 &bloom.texture.default_view,
                 &uniform,
             )),
@@ -216,19 +207,28 @@ pub(crate) fn prepare_post_bind_groups(
 }
 
 pub(crate) fn render_post(
-    view: ViewQuery<(&ViewTarget, &ViewPostPipeline, &ViewPostBindGroup), With<MoonlyCamera>>,
+    view: ViewQuery<
+        (
+            &MoonlyViewTargets,
+            &ViewPostPipeline,
+            &ViewPostBindGroup,
+            Option<&crate::MoonlyPostSettings>,
+        ),
+        With<MoonlyCamera>,
+    >,
     cache: Res<PipelineCache>,
     timer: Res<crate::gpu_timer::MoonlyGpuTimer>,
+    native_post: Res<moonly_core::MoonlyNativePost>,
     mut context: RenderContext,
 ) {
-    let (target, pipeline, group) = view.into_inner();
+    let (targets, pipeline, group, settings) = view.into_inner();
+    if native_post.0 || settings.is_some_and(|settings| settings.native_post) {
+        return;
+    }
     let Some(pipeline) = cache.get_render_pipeline(pipeline.0) else {
         return;
     };
-    let Some(attachment) = target.out_texture_color_attachment(None) else {
-        return;
-    };
-    let attachments = [Some(attachment)];
+    let attachments = [Some(targets.post_process.get_unsampled_attachment())];
     let diagnostics = context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {

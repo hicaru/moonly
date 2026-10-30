@@ -198,3 +198,69 @@ fn native_ambient_preserves_bevy_radiance_updates_and_opt_out() {
         Vec3::splat(3.0)
     );
 }
+
+#[test]
+fn explicit_moonly_lights_preserve_moonly_ambient() {
+    let mut app = native_test_app();
+    app.insert_resource(MoonlyNativeAmbient(true));
+    app.insert_resource(GlobalAmbientLight {
+        brightness: 200.0,
+        ..GlobalAmbientLight::default()
+    });
+    app.world_mut()
+        .resource_mut::<WeatherEnvironment>()
+        .ambient_color = Vec3::new(0.06, 0.07, 0.09);
+    app.world_mut()
+        .resource_mut::<WeatherEnvironment>()
+        .hemi_color = Vec4::new(0.4, 0.5, 0.6, 0.85);
+    app.world_mut().spawn(MoonlyLight::default());
+    app.update();
+
+    let environment = app.world().resource::<WeatherEnvironment>();
+    assert_eq!(environment.ambient_color, Vec3::new(0.06, 0.07, 0.09));
+    assert_eq!(environment.hemi_color, Vec4::new(0.4, 0.5, 0.6, 0.85));
+}
+
+#[test]
+fn native_volumetric_lights_preserve_flags_for_every_light_type() {
+    let mut app = native_test_app();
+    let point = app
+        .world_mut()
+        .spawn((PointLight::default(), VolumetricLight))
+        .id();
+    let spot = app
+        .world_mut()
+        .spawn((
+            SpotLight {
+                shadow_maps_enabled: true,
+                ..SpotLight::default()
+            },
+            VolumetricLight,
+        ))
+        .id();
+    let directional = app
+        .world_mut()
+        .spawn((DirectionalLight::default(), VolumetricLight))
+        .id();
+    app.update();
+
+    for entity in [point, spot, directional] {
+        let light = app.world().get::<MoonlyLight>(entity);
+        assert!(light.is_some_and(|light| {
+            light.flags.contains(MoonlyLightFlags::NATIVE)
+                && light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
+        }));
+    }
+    let spot = app.world().get::<MoonlyLight>(spot);
+    assert!(spot.is_some_and(|light| light.flags.contains(MoonlyLightFlags::SHADOW)));
+
+    app.world_mut()
+        .entity_mut(directional)
+        .remove::<VolumetricLight>();
+    app.update();
+    let directional = app.world().get::<MoonlyLight>(directional);
+    assert!(directional.is_some_and(|light| {
+        !light.flags.contains(MoonlyLightFlags::VOLUMETRIC)
+            && light.flags.contains(MoonlyLightFlags::NATIVE)
+    }));
+}

@@ -6,9 +6,14 @@ use moonly_core::WeatherEnvironment;
 
 use crate::camera::MoonlyCamera;
 
+/// Synchronize this camera's `DistanceFog` with `WeatherEnvironment`.
+#[derive(Component, Debug, Default, Clone, Copy, PartialEq, Eq, Reflect)]
+#[reflect(Component)]
+pub struct MoonlyWeatherFog;
+
 pub(crate) fn sync_fog_cameras(
     environment: Option<Res<WeatherEnvironment>>,
-    mut cameras: Query<&mut DistanceFog, With<MoonlyCamera>>,
+    mut cameras: Query<&mut DistanceFog, (With<MoonlyCamera>, With<MoonlyWeatherFog>)>,
 ) {
     let Some(environment) = environment else {
         return;
@@ -39,7 +44,11 @@ mod tests {
         });
         let entity = app
             .world_mut()
-            .spawn((MoonlyCamera::default(), DistanceFog::default()))
+            .spawn((
+                MoonlyCamera::default(),
+                MoonlyWeatherFog,
+                DistanceFog::default(),
+            ))
             .id();
         app.update();
         let fog = app.world().get::<DistanceFog>(entity).cloned();
@@ -50,9 +59,8 @@ mod tests {
     }
 
     #[test]
-    fn native_forward_preserves_explicit_fog() {
+    fn moonly_forward_preserves_explicit_fog() {
         let mut app = App::new();
-        app.insert_resource(moonly_core::MoonlyNativeForward(true));
         app.add_plugins((MinimalPlugins, crate::MoonlyRenderPlugin));
         let color = Color::srgb(0.1, 0.2, 0.3);
         let entity = app

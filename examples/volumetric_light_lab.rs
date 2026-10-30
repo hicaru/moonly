@@ -74,6 +74,7 @@ fn setup_tunnel(
         CameraRenderGraph::new(MoonlyRender),
         Exposure { ev100: 0.0 },
         DistanceFog::default(),
+        MoonlyWeatherFog,
         Transform::from_xyz(5.5, 3.2, 11.0).looking_at(Vec3::new(0.0, 1.5, -4.0), Vec3::Y),
     ));
 }

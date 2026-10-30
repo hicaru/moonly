@@ -18,7 +18,6 @@ use bevy::{
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         texture::{ColorAttachment, TextureCache},
-        view::ViewTarget,
     },
 };
 use moonly_post::{Hdr10PostConfig, MoonlyExposureMode};
@@ -28,6 +27,7 @@ use crate::{
     luminance_readback::{
         LuminanceReadback, LuminanceResultSender, create_readback, schedule_readback,
     },
+    view_targets::MoonlyViewTargets,
 };
 
 const LUMINANCE_SIZES: [u32; 4] = [256, 64, 8, 1];
@@ -147,20 +147,20 @@ pub(crate) struct LuminancePrepareInputs<'w> {
 pub(crate) fn prepare_luminance_bind_groups(
     mut commands: Commands,
     inputs: LuminancePrepareInputs,
-    views: Query<(Entity, &ViewTarget, &ViewLuminanceTargets), With<MoonlyCamera>>,
+    views: Query<(Entity, &MoonlyViewTargets, &ViewLuminanceTargets), With<MoonlyCamera>>,
 ) {
-    for (entity, scene, luminance) in &views {
+    for (entity, targets, luminance) in &views {
         let groups = [0_usize, 1, 2, 3].map(|stage| {
             let source_size = if stage == 0 {
-                scene.main_texture().size()
+                targets.scene.texture.texture.size()
             } else {
                 luminance_target_size(stage - 1)
             };
             let source = if stage == 0 {
-                scene.main_texture_view()
+                &targets.scene.texture.default_view
             } else {
                 luminance.targets.get(stage - 1).map_or_else(
-                    || scene.main_texture_view(),
+                    || &targets.scene.texture.default_view,
                     |target| &target.texture.default_view,
                 )
             };

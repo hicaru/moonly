@@ -77,6 +77,7 @@ fn setup_glass_gallery(
         CameraRenderGraph::new(MoonlyRender),
         Exposure { ev100: 0.0 },
         DistanceFog::default(),
+        MoonlyWeatherFog,
         Transform::from_xyz(5.8, 4.2, 8.5).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
     ));
 }

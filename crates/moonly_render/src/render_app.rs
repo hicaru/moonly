@@ -15,10 +15,10 @@ use crate::{
     MoonlyRender, accumulate, ao, bloom, camera, caster_visibility, combine, depth_copy,
     diagnostics, extraction, forward_layout, forward_lighting, forward_prepare, froxel_pass,
     gpu_timer, graph, jitter, light_packages, light_volume, luminance, material_adapters,
-    material_lut, mesh_bind_groups, mesh_pipeline::MoonlyMeshPipeline, minmax, occlusion, post,
-    projector, queue, render_passes, settings, shaders, shadow_bind_groups, shadow_pipeline,
-    shadow_queue, shadow_targets, spot_pipeline, sun_accumulate, surface, transmission,
-    view_targets, volumetrics,
+    material_lut, mesh_bind_groups, mesh_pipeline::MoonlyMeshPipeline, minmax, native_post,
+    occlusion, post, projector, queue, render_passes, settings, shaders, shadow_bind_groups,
+    shadow_pipeline, shadow_queue, shadow_targets, spot_pipeline, sun_accumulate, surface,
+    transmission, view_targets, volumetrics,
 };
 
 pub(crate) fn configure_shader_assets(app: &mut App) {
@@ -26,6 +26,7 @@ pub(crate) fn configure_shader_assets(app: &mut App) {
         return;
     }
     load_shader_library!(app, "lighting.wesl");
+    load_shader_library!(app, "native_ambient.wesl");
     load_shader_library!(app, "gbuffer_surface.wesl");
     load_shader_library!(app, "forward_lighting.wesl");
     embedded_asset!(app, "gbuffer.wesl");
@@ -34,6 +35,7 @@ pub(crate) fn configure_shader_assets(app: &mut App) {
     embedded_asset!(app, "combine.wesl");
     embedded_asset!(app, "depth_copy.wesl");
     embedded_asset!(app, "post.wesl");
+    embedded_asset!(app, "native_post/hdr10_output.wesl");
     embedded_asset!(app, "luminance.wesl");
     embedded_asset!(app, "volumetrics.wesl");
     embedded_asset!(app, "froxel.wesl");
@@ -101,6 +103,13 @@ pub(crate) fn configure_render_app(render_app: &mut SubApp) {
                     .after(bevy::pbr::init_prepass_pipeline)
                     .after(surface::init_surface_layout),
             ),
+        )
+        .add_systems(
+            RenderStartup,
+            (
+                native_post::init_native_post_pipeline,
+                native_post::init_hdr10_output_pipeline,
+            ),
         );
     configure_prepare_systems(render_app);
     configure_draw_commands(render_app);
@@ -128,15 +137,25 @@ fn configure_prepare_systems(render_app: &mut SubApp) {
                 combine::prepare_combine_bind_groups,
                 combine::prepare_combine_pipelines,
                 post::prepare_post_bind_groups,
-                post::prepare_post_pipelines,
-                luminance::prepare_luminance_bind_groups,
-                bloom::prepare_bloom_bind_groups,
+                (
+                    post::prepare_post_pipelines,
+                    native_post::prepare_native_post_pipelines,
+                    native_post::prepare_hdr10_output_pipelines,
+                    native_post::prepare_native_post_bind_groups,
+                    native_post::prepare_hdr10_output_bind_groups,
+                    luminance::prepare_luminance_bind_groups,
+                    bloom::prepare_bloom_bind_groups,
+                )
+                    .chain(),
             )
                 .chain()
                 .in_set(RenderSystems::PrepareResources),
             (
                 queue::queue_moonly_meshes,
                 shadow_queue::queue_shadow_meshes,
+                queue::filter_forward_phases
+                    .after(bevy::pbr::queue_material_meshes)
+                    .after(queue::queue_moonly_meshes),
             )
                 .in_set(RenderSystems::QueueMeshes),
             (
@@ -167,7 +186,11 @@ fn configure_draw_commands(render_app: &mut SubApp) {
         .init_gpu_resource::<SpecializedMeshPipelines<shadow_pipeline::MoonlyShadowMeshPipeline>>()
         .init_gpu_resource::<SpecializedRenderPipelines<combine::MoonlyCombinePipeline>>()
         .init_gpu_resource::<SpecializedRenderPipelines<post::MoonlyPostPipeline>>()
+        .init_gpu_resource::<SpecializedRenderPipelines<native_post::MoonlyNativePostPipeline>>()
+        .init_gpu_resource::<SpecializedRenderPipelines<native_post::MoonlyHdr10OutputPipeline>>()
         .allow_ambiguous_resource::<SpecializedRenderPipelines<combine::MoonlyCombinePipeline>>()
-        .allow_ambiguous_resource::<SpecializedRenderPipelines<post::MoonlyPostPipeline>>();
+        .allow_ambiguous_resource::<SpecializedRenderPipelines<post::MoonlyPostPipeline>>()
+        .allow_ambiguous_resource::<SpecializedRenderPipelines<native_post::MoonlyNativePostPipeline>>()
+        .allow_ambiguous_resource::<SpecializedRenderPipelines<native_post::MoonlyHdr10OutputPipeline>>();
     forward_lighting::register_forward_draws(render_app);
 }

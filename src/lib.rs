@@ -1,5 +1,6 @@
 //! Moonly — Bevy lighting, dynamic shadows, GI radiosity, and HDR10 plugin ported from `moonly-monolith`.
 
+pub mod bevy_compat;
 pub mod prelude;
 
 pub use bevy;
@@ -37,6 +38,7 @@ impl MoonlyPlugin {
 
 impl Plugin for MoonlyPlugin {
     fn build(&self, app: &mut App) {
+        bevy_compat::configure(app);
         let native_forward = app
             .world()
             .get_resource::<MoonlyNativeForward>()

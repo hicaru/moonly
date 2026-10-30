@@ -17,7 +17,7 @@ use bevy::{
         view::ExtractedView,
     },
 };
-use moonly_core::{LightPackage, MoonlySunPackage};
+use moonly_core::{LightPackage, MoonlyLightFlags, MoonlySunPackage};
 use moonly_volumetrics::{SunShaftsConfig, SunShaftsMode};
 
 use crate::{
@@ -140,7 +140,10 @@ fn create_volumetric_bind_group(
     if matches!(inputs.config.mode, SunShaftsMode::Off) {
         return None;
     }
-    let light = package.v_direct.first()?;
+    let light = package
+        .v_direct
+        .iter()
+        .find(|light| light.flags.contains(MoonlyLightFlags::VOLUMETRIC))?;
     let near = shadow.sun_batches.first()?;
     let middle = shadow.sun_batches.get(1)?;
     let far = shadow.sun_batches.get(2)?;

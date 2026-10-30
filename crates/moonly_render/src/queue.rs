@@ -2,8 +2,9 @@ use std::{any::TypeId, collections::HashMap};
 
 use bevy::{
     asset::{AssetId, Handle},
-    core_pipeline::prepass::{
-        MotionVectorPrepass, OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey,
+    core_pipeline::{
+        core_3d::{AlphaMask3d, Opaque3d},
+        prepass::{MotionVectorPrepass, OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey},
     },
     ecs::system::SystemParam,
     material::{
@@ -119,6 +120,11 @@ pub(crate) fn queue_moonly_meshes(resources: MoonlyQueueResources, mut queues: M
         for (render_entity, main_entity) in entities.iter_visible() {
             queue_entity(*render_entity, *main_entity, &mut context);
         }
+        debug!(
+            visible = entities.iter_visible().count(),
+            queued = context.queued.len(),
+            "Moonly mesh queue"
+        );
     }
     queues
         .queued
@@ -134,6 +140,23 @@ fn remove_previous(
     for entity in queued.drain() {
         opaque.remove(entity);
         alpha.remove(entity);
+    }
+}
+
+pub(crate) fn filter_forward_phases(
+    queued: Res<MoonlyQueuedEntities>,
+    mut opaque_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
+    mut alpha_phases: ResMut<ViewBinnedRenderPhases<AlphaMask3d>>,
+) {
+    for (view, entities) in &queued.0 {
+        let (Some(opaque), Some(alpha)) = (opaque_phases.get_mut(view), alpha_phases.get_mut(view))
+        else {
+            continue;
+        };
+        for entity in entities {
+            opaque.remove(*entity);
+            alpha.remove(*entity);
+        }
     }
 }
 

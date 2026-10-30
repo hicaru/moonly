@@ -34,7 +34,7 @@ impl MoonlyLightFlags {
     pub const GI_ENABLED: Self = Self(1 << 3);
     /// Light is a virtual indirect bounce source (`bVirtualGI`).
     pub const VIRTUAL_GI: Self = Self(1 << 4);
-    /// Light uses native Bevy intensity and BRDF semantics with R4 attenuation.
+    /// Light uses native Bevy intensity, BRDF, and attenuation semantics.
     pub const NATIVE: Self = Self(1 << 5);
 
     /// Check whether all bits in `other` are present.
@@ -259,6 +259,17 @@ impl LightPackage {
     #[must_use]
     pub const fn total_count(&self) -> usize {
         self.v_point.len() + self.v_spot.len() + self.v_shadowed.len() + self.v_direct.len()
+    }
+
+    /// Check whether the package contains an explicit Moonly light.
+    #[must_use]
+    pub fn has_non_native(&self) -> bool {
+        self.v_point
+            .iter()
+            .chain(&self.v_spot)
+            .chain(&self.v_shadowed)
+            .chain(&self.v_direct)
+            .any(|light| !light.flags.contains(MoonlyLightFlags::NATIVE))
     }
 }
 

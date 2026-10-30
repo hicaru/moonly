@@ -5,7 +5,7 @@ use bevy::{
     render::{camera::CameraRenderGraph, view::NoIndirectDrawing},
 };
 
-use crate::{MoonlyCamera, MoonlyGpuDiagnostics, MoonlyRenderPlugin};
+use crate::{MoonlyCamera, MoonlyGpuDiagnostics, MoonlyRender, MoonlyRenderPlugin};
 
 #[test]
 fn plugin_builds_without_a_render_app() {
@@ -18,7 +18,7 @@ fn plugin_builds_without_a_render_app() {
 }
 
 #[test]
-fn legacy_world_shares_targets_and_overlay_is_isolated() {
+fn world_and_overlay_use_moonly_graph() {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, MoonlyRenderPlugin));
     let world = app.world_mut().spawn(MoonlyCamera::default()).id();
@@ -29,22 +29,14 @@ fn legacy_world_shares_targets_and_overlay_is_isolated() {
         })
         .id();
     app.update();
-    assert!(
-        app.world()
-            .get::<bevy::render::view::IsolatedMainTexture>(world)
-            .is_none()
-    );
-    assert!(
-        app.world()
-            .get::<bevy::render::view::IsolatedMainTexture>(overlay)
-            .is_some()
-    );
-    assert!(app.world().get::<DeferredPrepass>(world).is_some());
-    assert!(
-        app.world()
-            .get::<bevy::light::EarlyLightCulling>(world)
-            .is_none()
-    );
+    for camera in [world, overlay] {
+        assert!(
+            app.world()
+                .get::<CameraRenderGraph>(camera)
+                .is_some_and(|graph| graph.0 == CameraRenderGraph::new(MoonlyRender).0)
+        );
+        assert!(app.world().get::<DeferredPrepass>(camera).is_some());
+    }
 }
 
 #[test]
@@ -60,11 +52,6 @@ fn native_forward_selects_core_graph_and_indirect_rendering() {
             .is_some_and(|graph| graph.0 == CameraRenderGraph::new(Core3d).0)
     );
     assert!(app.world().get::<NoIndirectDrawing>(camera).is_none());
-    assert!(
-        app.world()
-            .get::<bevy::light::EarlyLightCulling>(camera)
-            .is_some()
-    );
     assert!(app.world().get::<DeferredPrepass>(camera).is_none());
     assert!(app.world().get::<Hdr>(camera).is_none());
     let hdr_camera = app.world_mut().spawn((MoonlyCamera::default(), Hdr)).id();
@@ -100,7 +87,7 @@ fn native_forward_selects_core_graph_and_indirect_rendering() {
     app.update();
     assert!(
         app.world()
-            .get::<bevy::light::EarlyLightCulling>(camera)
-            .is_none()
+            .get::<CameraRenderGraph>(camera)
+            .is_some_and(|graph| graph.0 == CameraRenderGraph::new(Core3d).0)
     );
 }

@@ -30,12 +30,14 @@ struct MoonlySpotUniform {
 
 struct SpotVertexOutput {
     @builtin(position) position: vec4<f32>,
+    @location(0) clip_position: vec4<f32>,
 };
 
 @vertex
 fn vertex(@location(0) local_position: vec3<f32>) -> SpotVertexOutput {
     var out: SpotVertexOutput;
     out.position = spot.clip_from_local * vec4(local_position, 1.0);
+    out.clip_position = out.position;
     return out;
 }
 
@@ -46,7 +48,15 @@ fn light_attenuation(light_to_fragment: vec3<f32>) -> f32 {
         0.0,
         1.0,
     );
-    return linear * linear;
+    let reference = linear * linear;
+    let inverse_range_squared = 1.0 / max(
+        spot.position_range.w * spot.position_range.w,
+        0.0001,
+    );
+    let factor = distance_squared * inverse_range_squared;
+    let smooth_factor = clamp(1.0 - factor * factor, 0.0, 1.0);
+    let native = smooth_factor * smooth_factor / max(distance_squared, 0.0001);
+    return select(reference, native, spot.color.a >= 0.5);
 }
 
 @fragment
@@ -207,7 +217,9 @@ fn volumetric_fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     if spot.volumetric.x <= 0.0 {
         return vec4(0.0);
     }
-    let uv = in.position.xy / spot.screen_attenuation.xy;
+    let ndc = in.clip_position.xy / in.clip_position.w;
+    let uv = ndc * vec2(0.5, -0.5) + vec2(0.5);
+    let screen_xy = uv * spot.screen_attenuation.xy;
     let dimensions = vec2<f32>(textureDimensions(position_texture));
     let position = textureLoad(position_texture, vec2<i32>(uv * dimensions), 0);
     let far = spot.world_from_clip * vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 1.0, 1.0);
@@ -229,7 +241,7 @@ fn volumetric_fragment(in: SpotVertexOutput) -> @location(0) vec4<f32> {
     for (var index = 0; index < steps; index += 1) {
         let distance = (f32(index) + 0.5) * step_length;
         let point = spot.view_position.xyz + direction * distance;
-        scattering += local_scattering(point, in.position.xy) * step_length;
+        scattering += local_scattering(point, screen_xy) * step_length;
     }
     return vec4(scattering * spot.volumetric.x, 1.0);
 }

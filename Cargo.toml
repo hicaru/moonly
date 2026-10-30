@@ -18,9 +18,13 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-bevy = { git = "https://github.com/hicaru/bevy", branch = "lights", default-features = false, features = [
+bevy = { version = "0.20", default-features = false, features = [
     "3d",
     "ui",
+    "bevy_gltf",
+    "ktx2",
+    "png",
+    "zstd_rust",
 ] }
 criterion = "0.8.2"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
@@ -60,6 +64,43 @@ path = "examples/monolith_showcase.rs"
 name = "gi_shadows_lab"
 path = "examples/gi_shadows_lab.rs"
 
+[[example]]
+name = "bevy_lighting"
+path = "examples/bevy_lighting.rs"
+
+[[example]]
+name = "bevy_spotlight"
+path = "examples/bevy_spotlight.rs"
+
+[[example]]
+name = "bevy_transmission"
+path = "examples/bevy_transmission.rs"
+
+[[example]]
+name = "bevy_bloom_3d"
+path = "examples/bevy_bloom_3d.rs"
+
+[[example]]
+name = "bevy_volumetric_fog"
+path = "examples/bevy_volumetric_fog.rs"
+
+[[example]]
+name = "bevy_tonemapping"
+path = "examples/bevy_tonemapping.rs"
+
+[[example]]
+name = "bevy_many_lights"
+path = "examples/bevy_many_lights.rs"
+
+[[example]]
+name = "bevy_many_cameras_lights"
+path = "examples/bevy_many_cameras_lights.rs"
+
+[features]
+webgpu = ["bevy/webgpu"]
+exr = ["bevy/exr"]
+hdr = ["bevy/hdr"]
+
 [dependencies]
 bevy.workspace = true
 moonly_core.workspace = true
@@ -77,6 +118,8 @@ wesl.workspace = true
 criterion.workspace = true
 image.workspace = true
 wesl.workspace = true
+rand = "0.10.0"
+chacha20 = { version = "0.10.0", default-features = false, features = ["rng"] }
 
 [profile.dev]
 opt-level = 1

@@ -15,7 +15,6 @@ use bevy::{
         },
         renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         texture::ColorAttachment,
-        view::ViewTarget,
     },
     shader::Shader,
 };
@@ -132,7 +131,6 @@ type BloomView = (
     Entity,
     &'static crate::settings::MoonlyExposure,
     &'static MoonlyViewTargets,
-    &'static ViewTarget,
     Option<&'static crate::MoonlyPostSettings>,
 );
 
@@ -148,19 +146,19 @@ pub(crate) fn prepare_bloom_bind_groups(
     inputs: BloomPrepareInputs,
     views: Query<BloomView, With<MoonlyCamera>>,
 ) {
-    for (entity, camera, targets, view, settings) in &views {
+    for (entity, camera, targets, settings) in &views {
         let settings = settings
             .copied()
             .unwrap_or_else(|| crate::MoonlyPostSettings::from_config(&inputs.config));
         let groups = [0_usize, 1, 2, 3, 4].map(|stage| {
             let source = bloom_source(targets, stage);
             let source_size = if stage == 0 {
-                view.main_texture().size()
+                targets.scene.texture.texture.size()
             } else {
                 source.texture.texture.size()
             };
             let source_view = if stage == 0 {
-                view.main_texture_view()
+                &targets.scene.texture.default_view
             } else {
                 &source.texture.default_view
             };
@@ -230,17 +228,18 @@ pub(crate) struct BloomRenderInputs<'w> {
     pipeline: Res<'w, MoonlyBloomPipeline>,
     config: Res<'w, Hdr10PostConfig>,
     timer: Res<'w, crate::gpu_timer::MoonlyGpuTimer>,
+    native_post: Res<'w, moonly_core::MoonlyNativePost>,
 }
 
+type BloomRenderView = (
+    &'static MoonlyViewTargets,
+    &'static ViewBloomBindGroups,
+    Option<&'static crate::MoonlyPostSettings>,
+    Option<&'static bevy::post_process::bloom::Bloom>,
+);
+
 pub(crate) fn render_bloom(
-    view: ViewQuery<
-        (
-            &MoonlyViewTargets,
-            &ViewBloomBindGroups,
-            Option<&crate::MoonlyPostSettings>,
-        ),
-        With<MoonlyCamera>,
-    >,
+    view: ViewQuery<BloomRenderView, With<MoonlyCamera>>,
     inputs: BloomRenderInputs,
     mut context: RenderContext,
 ) {
@@ -249,8 +248,12 @@ pub(crate) fn render_bloom(
         pipeline,
         config,
         timer,
+        native_post,
     } = inputs;
-    let (targets, groups, settings) = view.into_inner();
+    let (targets, groups, settings, native) = view.into_inner();
+    if native.is_some() || native_post.0 || settings.is_some_and(|settings| settings.native_post) {
+        return;
+    }
     let intensity = settings.map_or(config.bloom_intensity, |settings| settings.bloom_intensity);
     if intensity <= 0.0 {
         return;

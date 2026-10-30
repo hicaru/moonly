@@ -1,3 +1,5 @@
+import package::native_ambient::evaluate_native_ambient;
+
 @group(0) @binding(0) var position_texture: texture_2d<f32>;
 @group(0) @binding(1) var normal_texture: texture_2d<f32>;
 @group(0) @binding(2) var albedo_gloss_texture: texture_2d<f32>;
@@ -68,6 +70,22 @@ fn apply_froxel(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     return color * sample.a + sample.rgb;
 }
 
+fn native_ambient(
+    position: vec4<f32>,
+    normal: vec3<f32>,
+    albedo_gloss: vec4<f32>,
+) -> vec3<f32> {
+    let view_direction = normalize(environment.view_position.xyz - position.xyz);
+    return evaluate_native_ambient(
+        normal,
+        view_direction,
+        albedo_gloss.rgb,
+        max(position.w - 1.0, 0.0),
+        1.0 - albedo_gloss.a,
+        environment.ambient.rgb,
+    );
+}
+
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dimensions = vec2<f32>(textureDimensions(position_texture));
@@ -128,7 +146,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let scalar_ao = textureLoad(ao_texture, pixel, 0).r;
     let ao = select(vec3(scalar_ao), colored_ao(scalar_ao, albedo_gloss.rgb), environment.ao.x >= 2.5);
     let ambient = environment.ambient.rgb + environment.hemi.rgb * environment.hemi.w * MOONLY_HEMI_SCALE;
-    let global_light = albedo_gloss.rgb * ambient * ao + accumulated;
+    let reference_global = albedo_gloss.rgb * ambient * ao + accumulated;
+    let native_global = native_ambient(position, normal, albedo_gloss) * ao + accumulated;
+    let global_light = select(reference_global, native_global, environment.fog_params.w > 0.5);
     let tracked_light = accumulated * ao;
     let tracked_only = accumulator.w > 1.5 && environment.fog_params.w < 0.5;
     let direct_color = select(global_light, tracked_light, tracked_only)
@@ -142,6 +162,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let height = exp(-environment.fog_params.y * (position.y - environment.fog_params.z));
     let optical_depth = environment.fog_params.x * distance(position.xyz, environment.view_position.xyz) * height;
     let density_fog = 1.0 - exp(-optical_depth);
-    let fog = max(distance_fog, density_fog);
+    let fog = select(max(distance_fog, density_fog), 0.0, environment.fog_params.w > 0.5);
     return vec4(mix(color, environment.fog_color.rgb, fog), 1.0);
 }

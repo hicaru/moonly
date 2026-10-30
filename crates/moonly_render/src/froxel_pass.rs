@@ -18,7 +18,7 @@ use bevy::{
         view::ExtractedView,
     },
 };
-use moonly_core::{LightPackage, MoonlySunPackage};
+use moonly_core::{LightPackage, MoonlyLightFlags, MoonlySunPackage};
 use moonly_volumetrics::{FROXEL_GRID_SIZE, MoonlyFroxelConfig};
 
 use crate::{
@@ -189,7 +189,11 @@ fn create_froxel_bind_group(
     if !inputs.config.enabled {
         return None;
     }
-    let light = inputs.package.v_direct.first()?;
+    let light = inputs
+        .package
+        .v_direct
+        .iter()
+        .find(|light| light.flags.contains(MoonlyLightFlags::VOLUMETRIC))?;
     let near = shadow.sun_batches.first()?;
     let middle = shadow.sun_batches.get(1)?;
     let far = shadow.sun_batches.get(2)?;

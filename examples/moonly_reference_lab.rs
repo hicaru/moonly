@@ -59,6 +59,9 @@ fn main() -> AppExit {
             fog_height_reference: 0.0,
             ..moonly_core::WeatherEnvironment::default()
         })
+        .insert_resource(moonly_core::MoonlyNativePost(
+            std::env::args().any(|arg| arg == "--native-post"),
+        ))
         .insert_resource(moonly_volumetrics::MoonlyFroxelConfig {
             enabled: std::env::args().any(|arg| arg == "--froxel"),
             ..moonly_volumetrics::MoonlyFroxelConfig::default()

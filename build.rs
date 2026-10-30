@@ -1,5 +1,8 @@
 //! Build-time WESL shader validation for the `moonly` workspace.
 
+#[path = "build/compat_examples.rs"]
+mod compat_examples;
+
 use std::error::Error;
 
 use wesl::VirtualResolver;
@@ -78,6 +81,7 @@ fn position_world_to_clip(position: vec3<f32>) -> vec4<f32> { return vec4<f32>(p
 const BEVY_PREPASS_IO: &str = r"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
     @location(2) world_normal: vec3<f32>,
     @location(4) world_position: vec4<f32>,
 }
@@ -125,6 +129,7 @@ struct FullscreenVertexOutput {
 ";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    compat_examples::generate()?;
     for &(file_path, base_dir, module_path) in WESL_PACKAGES {
         println!("cargo::rerun-if-changed={file_path}");
         let parsed = module_path.parse()?;
@@ -134,6 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     compile_gbuffer()?;
     compile_deferred_lighting()?;
     println!("cargo::rerun-if-changed=crates/moonly_render/src/combine.wesl");
+    println!("cargo::rerun-if-changed=crates/moonly_render/src/native_ambient.wesl");
     wesl::Wesl::new("crates/moonly_render/src")
         .add_constant("MOONLY_DEBUG_VIEW", 0.0)
         .add_constant("MOONLY_OVERLAY", 0.0)
@@ -211,9 +217,20 @@ fn compile_gbuffer() -> Result<(), Box<dyn Error>> {
         "bevy_pbr::render::pbr_functions",
         BEVY_PBR_FUNCTIONS,
     )?;
-    wesl::Wesl::new_barebones()
-        .set_custom_resolver(resolver)
-        .compile(&"package::gbuffer".parse()?)?;
+    println!("cargo::rerun-if-changed=assets/shaders/moonly_tonemapping_gbuffer.wesl");
+    add_module(
+        &mut resolver,
+        "package::moonly_tonemapping_gbuffer",
+        include_str!("assets/shaders/moonly_tonemapping_gbuffer.wesl"),
+    )?;
+    add_module(
+        &mut resolver,
+        "bevy_render::maths",
+        "const PI: f32 = 3.14159265;",
+    )?;
+    let compiler = wesl::Wesl::new_barebones().set_custom_resolver(resolver);
+    compiler.compile(&"package::gbuffer".parse()?)?;
+    compiler.compile(&"package::moonly_tonemapping_gbuffer".parse()?)?;
     Ok(())
 }
 

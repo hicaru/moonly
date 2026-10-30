@@ -1,23 +1,13 @@
 use bevy::{
-    core_pipeline::{tonemapping::tonemapping, upscaling::upscaling},
-    ecs::{
-        schedule::{
-            IntoScheduleConfigs,
-            common_conditions::{not, resource_equals},
-        },
-        system::ScheduleSystem,
-    },
-    pbr::{
-        allocate_uniforms, early_gpu_preprocess, late_gpu_preprocess, main_transmissive_pass_3d,
-        unpack_bins,
-    },
+    ecs::{schedule::IntoScheduleConfigs, system::ScheduleSystem},
+    pbr::{allocate_uniforms, early_gpu_preprocess, late_gpu_preprocess, unpack_bins},
 };
 
 use crate::{
     ao, bloom, combine, depth_copy, forward, froxel_pass, gpu_timer,
     graph::{self, MoonlyRenderSystems},
-    local_volumetrics, luminance, minmax, occlusion, post, shadow, sun_accumulate, sun_shadow,
-    volumetrics,
+    local_volumetrics, luminance, minmax, native_post, occlusion, post, shadow, sun_accumulate,
+    sun_shadow, transmission, ui, volumetrics,
 };
 
 pub(crate) fn render_systems() -> impl IntoScheduleConfigs<ScheduleSystem, ()> {
@@ -43,23 +33,26 @@ pub(crate) fn render_systems() -> impl IntoScheduleConfigs<ScheduleSystem, ()> {
         )
             .chain()
             .in_set(MoonlyRenderSystems::DeferredPass),
-        main_transmissive_pass_3d.in_set(MoonlyRenderSystems::TransmissivePass),
+        transmission::render_transmissive.in_set(MoonlyRenderSystems::TransmissivePass),
         forward::render_transparent.in_set(MoonlyRenderSystems::MainPass),
         (
             (
                 luminance::render_luminance,
+                native_post::render_native_bloom_input,
+                bevy::post_process::bloom::bloom,
+                native_post::render_native_bloom_output,
                 bloom::render_bloom,
                 post::render_post,
+                native_post::render_tonemapping,
+                forward::render_opaque,
             )
-                .chain()
-                .run_if(not(resource_equals(moonly_core::MoonlyNativePost(true)))),
-            tonemapping.run_if(resource_equals(moonly_core::MoonlyNativePost(true))),
-            upscaling.run_if(resource_equals(moonly_core::MoonlyNativePost(true))),
+                .chain(),
             gpu_timer::resolve_gpu_timings,
         )
             .chain()
             .in_set(MoonlyRenderSystems::PostProcess),
-        bevy::ui_render::render_pass::ui_pass.in_set(MoonlyRenderSystems::Ui),
+        ui::render_ui.in_set(MoonlyRenderSystems::Ui),
+        native_post::render_upscaling.in_set(MoonlyRenderSystems::FinalOutput),
     )
         .chain()
 }

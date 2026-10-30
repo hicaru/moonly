@@ -1,20 +1,12 @@
 use bevy::{
-    camera::{Exposure, Hdr},
-    core_pipeline::{
-        prepass::DeferredPrepass,
-        schedule::Core3d,
-        tonemapping::{DebandDither, Tonemapping},
-    },
+    camera::{CameraMainTextureUsages, Exposure, Hdr},
+    core_pipeline::{prepass::DeferredPrepass, schedule::Core3d, tonemapping::DebandDither},
     ecs::{lifecycle::HookContext, query::QueryItem, world::DeferredWorld},
-    light::EarlyLightCulling,
     pbr::ScreenSpaceTransmission,
     prelude::*,
     render::{
-        RenderApp,
-        camera::CameraRenderGraph,
-        extract_component::ExtractComponent,
-        sync_component::SyncComponent,
-        view::{IsolatedMainTexture, NoIndirectDrawing},
+        RenderApp, camera::CameraRenderGraph, extract_component::ExtractComponent,
+        sync_component::SyncComponent, view::NoIndirectDrawing,
     },
 };
 
@@ -67,14 +59,15 @@ fn configure_moonly_camera(mut world: DeferredWorld, entity: Entity) {
         .get_resource::<moonly_core::MoonlyNativePost>()
         .is_some_and(|settings| settings.0);
     let deferred = world.get::<DeferredPrepass>(entity).is_some();
-    let isolated = world
-        .get::<MoonlyCamera>(entity)
-        .is_some_and(|camera| camera.role == MoonlyCameraRole::Overlay);
+    let usages = world
+        .get::<CameraMainTextureUsages>(entity)
+        .copied()
+        .unwrap_or_default()
+        .with(bevy::render::render_resource::TextureUsages::COPY_DST);
     let mut commands = world.commands();
     let mut entity = commands.entity(entity);
     if forward {
-        entity.insert((CameraRenderGraph::new(Core3d), EarlyLightCulling));
-        entity.remove::<IsolatedMainTexture>();
+        entity.insert(CameraRenderGraph::new(Core3d));
         if !deferred {
             entity.remove::<DeferredPrepass>();
         }
@@ -85,26 +78,18 @@ fn configure_moonly_camera(mut world: DeferredWorld, entity: Entity) {
         Msaa::Off,
         NoIndirectDrawing,
         ScreenSpaceTransmission::default(),
-        Tonemapping::default(),
         Hdr,
         DeferredPrepass,
+        usages,
     ));
-    entity.remove::<EarlyLightCulling>();
-    if isolated {
-        entity.insert(IsolatedMainTexture);
-    } else {
-        entity.remove::<IsolatedMainTexture>();
-    }
     if !native {
-        entity.insert((Tonemapping::None, DebandDither::Disabled));
+        entity.insert(DebandDither::Disabled);
     }
 }
 
 fn on_remove_moonly_camera(mut world: DeferredWorld, context: HookContext) {
     if let Ok(mut entity) = world.commands().get_entity(context.entity) {
-        entity
-            .try_insert(CameraRenderGraph::new(Core3d))
-            .remove::<EarlyLightCulling>();
+        entity.insert(CameraRenderGraph::new(Core3d));
     }
 }
 
@@ -224,21 +209,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn role_changes_update_texture_isolation() {
+    fn role_changes_keep_moonly_render_graph() {
         let mut world = World::new();
-        let entity = world.spawn(MoonlyCamera::default()).id();
-        assert!(world.get::<IsolatedMainTexture>(entity).is_none());
-        if let Some(mut camera) = world.get_mut::<MoonlyCamera>(entity) {
-            camera.role = MoonlyCameraRole::Overlay;
+        let entity = world
+            .spawn((
+                MoonlyCamera::default(),
+                bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
+            ))
+            .id();
+        for role in [MoonlyCameraRole::Overlay, MoonlyCameraRole::World] {
+            if let Some(mut camera) = world.get_mut::<MoonlyCamera>(entity) {
+                camera.role = role;
+            }
+            sync_moonly_camera_roles(&mut world);
+            world.flush();
+            assert!(
+                world
+                    .get::<CameraRenderGraph>(entity)
+                    .is_some_and(|graph| graph.0 == CameraRenderGraph::new(MoonlyRender).0)
+            );
+            assert!(world.get::<DeferredPrepass>(entity).is_some());
+            assert!(world.get_entity(entity).is_ok());
         }
-        sync_moonly_camera_roles(&mut world);
-        world.flush();
-        assert!(world.get::<IsolatedMainTexture>(entity).is_some());
-        if let Some(mut camera) = world.get_mut::<MoonlyCamera>(entity) {
-            camera.role = MoonlyCameraRole::World;
-        }
-        sync_moonly_camera_roles(&mut world);
-        world.flush();
-        assert!(world.get::<IsolatedMainTexture>(entity).is_none());
+        assert_eq!(
+            world.get::<bevy::core_pipeline::tonemapping::Tonemapping>(entity),
+            Some(&bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface)
+        );
     }
 }

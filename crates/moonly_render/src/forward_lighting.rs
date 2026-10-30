@@ -260,3 +260,21 @@ pub(crate) fn register_forward_draws(render_app: &mut SubApp) {
     render_app.add_render_command::<Transmissive3d, DrawMoonlyForwardMaterial>();
     render_app.add_render_command::<Transparent3d, DrawMoonlyForwardMaterial>();
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn native_attenuation_matches_bevy_range_falloff() {
+        let source = include_str!("forward_lighting.wesl");
+        assert!(source.contains("smooth_factor * smooth_factor / max(distance_squared, 0.0001)"));
+        assert!(!source.contains("light.position_range.w * 0.95"));
+
+        let distance: f32 = 4.75;
+        let range: f32 = 10.0;
+        let factor = distance * distance / (range * range);
+        let smooth_factor = 1.0 - factor * factor;
+        let expected = smooth_factor * smooth_factor / (distance * distance);
+        let actual = (1.0 - factor * factor).powi(2) / distance.powi(2);
+        assert!((actual - expected).abs() < 1.0e-6);
+    }
+}
